@@ -32,7 +32,7 @@ export default function Home() {
             src="/photos/Bilde_1.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-contain"
+            className="object-cover object-center"
             priority
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-white/40" />
