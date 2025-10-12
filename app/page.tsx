@@ -94,7 +94,7 @@ export default function Home() {
 
         <div className="relative z-10 max-w-4xl mx-auto w-full">
           {/* Third Photo in Foreground - Clear */}
-          <div className="relative h-96 md:h-[500px] rounded-2xl overflow-hidden mb-12 shadow-2xl">
+          <div className="relative h-[500px] md:h-[700px] overflow-hidden mb-12 shadow-2xl">
             <Image
               src="/photos/Bilde_3.jpg"
               alt="Silje & Sindre"
