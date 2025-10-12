@@ -61,19 +61,42 @@ export default function Home() {
         {/* Background Image */}
         <div className="absolute inset-0 z-0">
           <Image
+            src="/photos/Bilde_2.jpg"
+            alt="Silje & Sindre"
+            fill
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-white/30" />
+        </div>
+
+        <div className="relative z-10 max-w-4xl mx-auto w-full">
+          {/* Welcome Text */}
+          <div className="text-center space-y-8 py-12">
+            <p className="text-2xl md:text-3xl text-foreground font-light leading-relaxed">
+              Velkommen til vårt bryllup 15.august 2026. Vi gleder oss til å feire kjærligheten med familie og venner.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Ceremony Details Section */}
+      <section className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
+        {/* Background Image - Blurred */}
+        <div className="absolute inset-0 z-0">
+          <Image
             src="/photos/Bilde_3.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-contain"
+            className="object-cover blur-md"
           />
           <div className="absolute inset-0 bg-white/60" />
         </div>
 
         <div className="relative z-10 max-w-4xl mx-auto w-full">
-          {/* Second Photo in Foreground */}
+          {/* Third Photo in Foreground - Clear */}
           <div className="relative h-96 md:h-[500px] rounded-2xl overflow-hidden mb-12 shadow-2xl">
             <Image
-              src="/photos/Bilde_2.jpg"
+              src="/photos/Bilde_3.jpg"
               alt="Silje & Sindre"
               fill
               className="object-cover"
@@ -81,47 +104,49 @@ export default function Home() {
             <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
           </div>
 
-          {/* Date and Location Info */}
+          {/* Ceremony Info Text */}
           <div className="text-center space-y-8 py-12">
-            <div className="space-y-4">
-              <h2 className="font-serif text-4xl md:text-5xl font-bold text-foreground">
-                15. oktober 2025
-              </h2>
-              <div className="w-24 h-1 bg-primary mx-auto rounded-full" />
-            </div>
+            <p className="text-xl md:text-2xl text-foreground font-light leading-relaxed">
+              Seremonien holdes i Indre Arna kirke klokken 14:00, etterfulgt av middag og fest på kvelden.
+            </p>
+          </div>
+        </div>
+      </section>
 
-            <div className="space-y-2">
-              <p className="text-xl md:text-2xl text-muted-foreground">
-                Vielsen
-              </p>
-              <p className="text-lg md:text-xl text-foreground font-light">
-                Klokken 14:00
-              </p>
-            </div>
+      {/* Share the Day Section */}
+      <section className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
+        {/* Background Image */}
+        <div className="absolute inset-0 z-0">
+          <Image
+            src="/photos/Bilde_4.jpg"
+            alt="Silje & Sindre"
+            fill
+            className="object-cover"
+          />
+          <div className="absolute inset-0 bg-white/60" />
+        </div>
 
-            <div className="space-y-2 pt-4">
-              <p className="text-xl md:text-2xl text-muted-foreground">
-                Sted
-              </p>
-              <p className="text-lg md:text-xl text-foreground font-light">
-                [Lokasjon kommer]
-              </p>
-            </div>
+        <div className="relative z-10 max-w-4xl mx-auto w-full">
+          {/* Message Text */}
+          <div className="text-center space-y-8 py-12">
+            <p className="text-2xl md:text-3xl text-foreground font-light leading-relaxed">
+              Vi håper at du/dere vil dele denne store dagen med oss.
+            </p>
           </div>
         </div>
       </section>
 
       {/* RSVP Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
+      <section className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
         {/* Background Image */}
         <div className="absolute inset-0 z-0">
           <Image
             src="/photos/Bilde_5.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-contain"
+            className="object-cover"
           />
-          <div className="absolute inset-0 bg-white/60" />
+          <div className="absolute inset-0 bg-white/30" />
         </div>
 
         <div className="relative z-10 max-w-2xl mx-auto w-full">
