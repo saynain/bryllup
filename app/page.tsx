@@ -1,13 +1,51 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Image from "next/image";
+import { motion, useScroll, useTransform } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export default function Home() {
+  const ref = useRef(null);
+  const { scrollYProgress } = useScroll({
+    target: ref,
+    offset: ["start start", "end start"]
+  });
+
+  const y1 = useTransform(scrollYProgress, [0, 1], ["0%", "30%"]);
+
+  const section2Ref = useRef(null);
+  const section3Ref = useRef(null);
+  const section4Ref = useRef(null);
+  const section5Ref = useRef(null);
+
+  const { scrollYProgress: section2Progress } = useScroll({
+    target: section2Ref,
+    offset: ["start end", "end start"]
+  });
+  const y2 = useTransform(section2Progress, [0, 1], ["-20%", "20%"]);
+
+  const { scrollYProgress: section3Progress } = useScroll({
+    target: section3Ref,
+    offset: ["start end", "end start"]
+  });
+  const y3 = useTransform(section3Progress, [0, 1], ["-20%", "20%"]);
+
+  const { scrollYProgress: section4Progress } = useScroll({
+    target: section4Ref,
+    offset: ["start end", "end start"]
+  });
+  const y4 = useTransform(section4Progress, [0, 1], ["-20%", "20%"]);
+
+  const { scrollYProgress: section5Progress } = useScroll({
+    target: section5Ref,
+    offset: ["start end", "end start"]
+  });
+  const y5 = useTransform(section5Progress, [0, 1], ["-20%", "20%"]);
+
   const [formData, setFormData] = useState({
     name: "",
     attending: "",
@@ -23,11 +61,17 @@ export default function Home() {
   };
 
   return (
-    <main className="relative min-h-screen">
+    <main ref={ref} className="relative min-h-screen">
       {/* Hero Section */}
       <section className="relative h-screen flex items-center justify-center overflow-hidden">
         {/* Background Image */}
-        <div className="absolute inset-0 z-0">
+        <motion.div
+          className="absolute inset-0 z-0"
+          style={{ y: y1 }}
+          initial={{ scale: 1.1 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: 1.5, ease: "easeOut" }}
+        >
           <Image
             src="/photos/Bilde_1.jpg"
             alt="Silje & Sindre"
@@ -36,16 +80,26 @@ export default function Home() {
             priority
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-white/40" />
-        </div>
+        </motion.div>
 
         {/* Content */}
         <div className="relative z-20 text-center px-4">
-          <h1 className="font-serif text-6xl md:text-8xl font-bold text-white drop-shadow-2xl mb-4 tracking-wide">
+          <motion.h1
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className="font-serif text-6xl md:text-8xl font-bold text-white drop-shadow-2xl mb-4 tracking-wide"
+          >
             Vi gifter oss!
-          </h1>
-          <p className="font-serif text-3xl md:text-5xl text-white/95 drop-shadow-lg tracking-wider">
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, delay: 0.3, ease: "easeOut" }}
+            className="font-serif text-3xl md:text-5xl text-white/95 drop-shadow-lg tracking-wider"
+          >
             Silje & Sindre
-          </p>
+          </motion.p>
         </div>
 
         {/* Scroll indicator */}
@@ -57,9 +111,9 @@ export default function Home() {
       </section>
 
       {/* Date and Location Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
+      <section ref={section2Ref} className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
         {/* Background Image */}
-        <div className="absolute inset-0 z-0">
+        <motion.div className="absolute inset-0 z-0" style={{ y: y2 }}>
           <Image
             src="/photos/Bilde_2.jpg"
             alt="Silje & Sindre"
@@ -67,22 +121,28 @@ export default function Home() {
             className="object-cover"
           />
           <div className="absolute inset-0 bg-white/30" />
-        </div>
+        </motion.div>
 
         <div className="relative z-10 max-w-4xl mx-auto w-full">
           {/* Welcome Text */}
           <div className="text-center space-y-8 py-12">
-            <p className="text-2xl md:text-3xl text-foreground font-light leading-relaxed">
+            <motion.p
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: false, amount: 0.3 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+              className="text-2xl md:text-3xl text-foreground font-light leading-relaxed"
+            >
               Velkommen til vårt bryllup 15.august 2026. Vi gleder oss til å feire kjærligheten med familie og venner.
-            </p>
+            </motion.p>
           </div>
         </div>
       </section>
 
       {/* Ceremony Details Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
+      <section ref={section3Ref} className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
         {/* Background Image - Blurred */}
-        <div className="absolute inset-0 z-0">
+        <motion.div className="absolute inset-0 z-0" style={{ y: y3 }}>
           <Image
             src="/photos/Bilde_3.jpg"
             alt="Silje & Sindre"
@@ -90,11 +150,17 @@ export default function Home() {
             className="object-cover blur-md"
           />
           <div className="absolute inset-0 bg-white/60" />
-        </div>
+        </motion.div>
 
         <div className="relative z-10 max-w-4xl mx-auto w-full">
           {/* Third Photo in Foreground - Clear */}
-          <div className="relative h-[500px] md:h-[700px] overflow-hidden mb-12 shadow-2xl">
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: false, amount: 0.2 }}
+            transition={{ duration: 0.9, ease: "easeOut" }}
+            className="relative h-[500px] md:h-[700px] overflow-hidden mb-12 shadow-2xl"
+          >
             <Image
               src="/photos/Bilde_3.jpg"
               alt="Silje & Sindre"
@@ -102,21 +168,27 @@ export default function Home() {
               className="object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
-          </div>
+          </motion.div>
 
           {/* Ceremony Info Text */}
           <div className="text-center space-y-8 py-12">
-            <p className="text-xl md:text-2xl text-foreground font-light leading-relaxed">
+            <motion.p
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: false, amount: 0.3 }}
+              transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
+              className="text-xl md:text-2xl text-foreground font-light leading-relaxed"
+            >
               Seremonien holdes i Indre Arna kirke klokken 14:00, etterfulgt av middag og fest på kvelden.
-            </p>
+            </motion.p>
           </div>
         </div>
       </section>
 
       {/* Share the Day Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
+      <section ref={section4Ref} className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
         {/* Background Image */}
-        <div className="absolute inset-0 z-0">
+        <motion.div className="absolute inset-0 z-0" style={{ y: y4 }}>
           <Image
             src="/photos/Bilde_4.jpg"
             alt="Silje & Sindre"
@@ -124,22 +196,28 @@ export default function Home() {
             className="object-cover"
           />
           <div className="absolute inset-0 bg-white/60" />
-        </div>
+        </motion.div>
 
         <div className="relative z-10 max-w-4xl mx-auto w-full">
           {/* Message Text */}
           <div className="text-center space-y-8 py-12">
-            <p className="text-2xl md:text-3xl text-foreground font-light leading-relaxed">
+            <motion.p
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: false, amount: 0.3 }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+              className="text-2xl md:text-3xl text-foreground font-light leading-relaxed"
+            >
               Vi håper at du/dere vil dele denne store dagen med oss.
-            </p>
+            </motion.p>
           </div>
         </div>
       </section>
 
       {/* RSVP Section */}
-      <section className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
+      <section ref={section5Ref} className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
         {/* Background Image */}
-        <div className="absolute inset-0 z-0">
+        <motion.div className="absolute inset-0 z-0" style={{ y: y5 }}>
           <Image
             src="/photos/Bilde_5.jpg"
             alt="Silje & Sindre"
@@ -147,10 +225,16 @@ export default function Home() {
             className="object-cover"
           />
           <div className="absolute inset-0 bg-white/30" />
-        </div>
+        </motion.div>
 
         <div className="relative z-10 max-w-2xl mx-auto w-full">
-          <div className="text-center mb-12">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: false, amount: 0.3 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="text-center mb-12"
+          >
             <h2 className="font-serif text-4xl md:text-5xl font-bold text-foreground mb-4">
               Kan du komme?
             </h2>
@@ -160,9 +244,13 @@ export default function Home() {
             <p className="text-sm text-muted-foreground mt-2">
               Vennligst svar innen 1. september 2025
             </p>
-          </div>
+          </motion.div>
 
-          <form
+          <motion.form
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: false, amount: 0.2 }}
+            transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }}
             onSubmit={handleSubmit}
             className="bg-white rounded-2xl shadow-xl p-8 md:p-12 space-y-8"
           >
@@ -259,28 +347,40 @@ export default function Home() {
             >
               Send svar
             </Button>
-          </form>
+          </motion.form>
         </div>
       </section>
 
       {/* Footer with Final Photo */}
       <section className="relative bg-gradient-to-b from-white to-background py-20 px-4">
         <div className="max-w-4xl mx-auto">
-          <div className="relative h-96 md:h-[500px] rounded-2xl overflow-hidden shadow-2xl mb-12">
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: false, amount: 0.3 }}
+            transition={{ duration: 0.9, ease: "easeOut" }}
+            className="relative h-96 md:h-[500px] rounded-2xl overflow-hidden shadow-2xl mb-12"
+          >
             <Image
               src="/photos/Bilde_4.jpg"
               alt="Silje & Sindre"
               fill
               className="object-cover"
             />
-          </div>
+          </motion.div>
 
-          <div className="text-center space-y-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: false, amount: 0.5 }}
+            transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
+            className="text-center space-y-4"
+          >
             <p className="font-serif text-2xl text-foreground">
               Vi gleder oss til å feire med dere!
             </p>
             <p className="text-muted-foreground">Silje & Sindre</p>
-          </div>
+          </motion.div>
         </div>
       </section>
 
