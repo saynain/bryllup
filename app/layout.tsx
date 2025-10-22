@@ -1,17 +1,18 @@
 import type { Metadata } from "next";
-import { Playfair_Display, Lato } from "next/font/google";
+import { Italianno, Cormorant } from "next/font/google";
 import "./globals.css";
 
-const playfair = Playfair_Display({
+const italianno = Italianno({
+  weight: ["400"],
   subsets: ["latin"],
-  variable: "--font-playfair",
+  variable: "--font-italianno",
   display: "swap",
 });
 
-const lato = Lato({
-  weight: ["300", "400", "700"],
+const cormorant = Cormorant({
+  weight: ["300", "400", "500", "600", "700"],
   subsets: ["latin"],
-  variable: "--font-lato",
+  variable: "--font-cormorant",
   display: "swap",
 });
 
@@ -28,7 +29,7 @@ export default function RootLayout({
   return (
     <html lang="no">
       <body
-        className={`${playfair.variable} ${lato.variable} font-sans antialiased`}
+        className={`${italianno.variable} ${cormorant.variable} font-sans antialiased`}
       >
         {children}
       </body>

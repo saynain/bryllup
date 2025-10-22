@@ -62,7 +62,8 @@
 
 body {
   background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
+  color: #5D4E37;
+  font-family: var(--font-cormorant), serif;
 }
 
 /* Smooth scrolling */
@@ -86,4 +87,16 @@ html {
 
 .cloud-float-slow {
   animation: float 30s ease-in-out infinite;
+}
+
+/* Remove radio button focus ring */
+button[role="radio"] {
+  box-shadow: none !important;
+}
+
+button[role="radio"]:focus,
+button[role="radio"]:focus-visible,
+button[role="radio"][data-state="checked"] {
+  box-shadow: none !important;
+  outline: none !important;
 }

@@ -88,7 +88,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, ease: "easeOut" }}
-            className="font-serif text-6xl md:text-8xl font-bold text-white drop-shadow-2xl mb-4 tracking-wide"
+            className="text-5xl md:text-7xl font-bold text-white drop-shadow-2xl mb-4 tracking-wide"
           >
             Vi gifter oss!
           </motion.h1>
@@ -96,7 +96,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, delay: 0.3, ease: "easeOut" }}
-            className="font-serif text-3xl md:text-5xl text-white/95 drop-shadow-lg tracking-wider"
+            className="text-3xl md:text-4xl text-white drop-shadow-lg tracking-wider"
           >
             Silje & Sindre
           </motion.p>
@@ -131,7 +131,7 @@ export default function Home() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: false, amount: 0.3 }}
               transition={{ duration: 0.8, ease: "easeOut" }}
-              className="text-2xl md:text-3xl text-foreground font-light leading-relaxed"
+              className="text-2xl md:text-3xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
             >
               Velkommen til vårt bryllup 15.august 2026. Vi gleder oss til å feire kjærligheten med familie og venner.
             </motion.p>
@@ -177,7 +177,7 @@ export default function Home() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: false, amount: 0.3 }}
               transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-              className="text-xl md:text-2xl text-foreground font-light leading-relaxed"
+              className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
             >
               Seremonien holdes i Indre Arna kirke klokken 14:00, etterfulgt av middag og fest på kvelden.
             </motion.p>
@@ -206,7 +206,7 @@ export default function Home() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: false, amount: 0.3 }}
               transition={{ duration: 0.8, ease: "easeOut" }}
-              className="text-2xl md:text-3xl text-foreground font-light leading-relaxed"
+              className="text-2xl md:text-3xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
             >
               Vi håper at du/dere vil dele denne store dagen med oss.
             </motion.p>
@@ -235,14 +235,11 @@ export default function Home() {
             transition={{ duration: 0.8, ease: "easeOut" }}
             className="text-center mb-12"
           >
-            <h2 className="font-serif text-4xl md:text-5xl font-bold text-foreground mb-4">
+            <h2 className="text-4xl md:text-5xl font-semibold text-[#5D4E37] mb-4 drop-shadow-lg">
               Kan du komme?
             </h2>
-            <p className="text-lg text-muted-foreground">
-              Vi håper du kan feire med oss!
-            </p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Vennligst svar innen 1. september 2025
+            <p className="text-2xl text-[#5D4E37] drop-shadow-lg">
+              Vi gleder oss til å feire med dere!
             </p>
           </motion.div>
 
@@ -252,7 +249,7 @@ export default function Home() {
             viewport={{ once: false, amount: 0.2 }}
             transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }}
             onSubmit={handleSubmit}
-            className="bg-white rounded-2xl shadow-xl p-8 md:p-12 space-y-8"
+            className="bg-white rounded-2xl shadow-xl p-8 md:p-12 pb-4 md:pb-6 space-y-8"
           >
             <div className="space-y-2">
               <Label htmlFor="name" className="text-base">
@@ -322,7 +319,7 @@ export default function Home() {
 
                 <div className="space-y-2">
                   <Label htmlFor="dietary" className="text-base">
-                    Matallergier eller ønsker
+                    Allergier?
                   </Label>
                   <Input
                     id="dietary"
@@ -340,18 +337,24 @@ export default function Home() {
               </>
             )}
 
-            <Button
-              type="submit"
-              size="lg"
-              className="w-full h-12 text-base font-semibold"
-            >
-              Send svar
-            </Button>
+            <div className="space-y-2">
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full h-12 text-base font-semibold"
+              >
+                Send svar
+              </Button>
+              <p className="text-center text-[#5D4E37]">
+                <span className="text-sm">Gi en lyd innen </span>
+                <span className="text-base">01.02.2026</span>
+              </p>
+            </div>
           </motion.form>
         </div>
       </section>
 
-      {/* Footer with Final Photo */}
+      {/* Footer with Map */}
       <section className="relative bg-gradient-to-b from-white to-background py-20 px-4">
         <div className="max-w-4xl mx-auto">
           <motion.div
@@ -361,25 +364,16 @@ export default function Home() {
             transition={{ duration: 0.9, ease: "easeOut" }}
             className="relative h-96 md:h-[500px] rounded-2xl overflow-hidden shadow-2xl mb-12"
           >
-            <Image
-              src="/photos/Bilde_4.jpg"
-              alt="Silje & Sindre"
-              fill
-              className="object-cover"
+            <iframe
+              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1966.0!2d5.3267772!3d60.4349495!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x463cfdd429037e91%3A0xe2a4e88929171a79!2s%C3%98vre-Eide%20G%C3%A5rd!5e0!3m2!1sen!2sno!4v1234567890!5m2!1sen!2sno"
+              width="100%"
+              height="100%"
+              style={{ border: 0 }}
+              allowFullScreen
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              title="Øvre-Eide Gård, Eidsvåg, Bergen"
             />
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: false, amount: 0.5 }}
-            transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-            className="text-center space-y-4"
-          >
-            <p className="font-serif text-2xl text-foreground">
-              Vi gleder oss til å feire med dere!
-            </p>
-            <p className="text-muted-foreground">Silje & Sindre</p>
           </motion.div>
         </div>
       </section>
