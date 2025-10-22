@@ -171,7 +171,7 @@ export default function Home() {
           </motion.div>
 
           {/* Ceremony Info Text */}
-          <div className="text-center space-y-8 py-12">
+          <div className="text-center py-12">
             <motion.p
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -179,7 +179,16 @@ export default function Home() {
               transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
               className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
             >
-              Seremonien holdes i Indre Arna kirke klokken 14:00, etterfulgt av middag og fest på kvelden.
+              Seremonien holdes i Arna kirke klokken 14:00, etterfulgt av middag og fest på kvelden.
+            </motion.p>
+            <motion.p
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: false, amount: 0.3 }}
+              transition={{ duration: 0.8, ease: "easeOut", delay: 0.4 }}
+              className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg mt-2"
+            >
+              Mer informasjon kommer.
             </motion.p>
           </div>
         </div>
@@ -291,7 +300,7 @@ export default function Home() {
                     htmlFor="no"
                     className="text-base font-normal cursor-pointer flex-1"
                   >
-                    Dessverre kan jeg ikke
+                    Dessverre kan jeg ikke komme
                   </Label>
                 </div>
               </RadioGroup>
@@ -354,8 +363,9 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Footer with Map */}
-      <section className="relative bg-gradient-to-b from-white to-background py-20 px-4">
+      {/* Footer with Map - DISABLED */}
+      {/* Uncomment this section to enable the map */}
+      {/* <section className="relative bg-gradient-to-b from-white to-background py-20 px-4">
         <div className="max-w-4xl mx-auto">
           <motion.div
             initial={{ opacity: 0, y: 40 }}
@@ -376,7 +386,7 @@ export default function Home() {
             />
           </motion.div>
         </div>
-      </section>
+      </section> */}
 
     </main>
   );
