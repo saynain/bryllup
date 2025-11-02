@@ -53,11 +53,55 @@ export default function Home() {
     dietaryRestrictions: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<{
+    type: "success" | "error" | null;
+    message: string;
+  }>({ type: null, message: "" });
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Form submitted:", formData);
-    // Handle form submission here
-    alert("Takk for svar!");
+    setIsSubmitting(true);
+    setSubmitStatus({ type: null, message: "" });
+
+    try {
+      const response = await fetch("/api/rsvp", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Noe gikk galt");
+      }
+
+      setSubmitStatus({
+        type: "success",
+        message: "Takk for svar!",
+      });
+
+      // Reset form after successful submission
+      setFormData({
+        name: "",
+        attending: "",
+        guests: "",
+        dietaryRestrictions: "",
+      });
+    } catch (error) {
+      setSubmitStatus({
+        type: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Kunne ikke sende svar. Vennligst prøv igjen.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -351,14 +395,29 @@ export default function Home() {
                 type="submit"
                 size="lg"
                 className="w-full h-12 text-base font-semibold"
+                disabled={isSubmitting}
               >
-                Send svar
+                {isSubmitting ? "Sender..." : "Send svar"}
               </Button>
               <p className="text-center text-[#5D4E37]">
                 <span className="text-sm">Gi en lyd innen </span>
                 <span className="text-base">01.02.2026</span>
               </p>
             </div>
+
+            {submitStatus.type && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`p-4 rounded-lg text-center ${
+                  submitStatus.type === "success"
+                    ? "bg-green-100 text-green-800"
+                    : "bg-red-100 text-red-800"
+                }`}
+              >
+                {submitStatus.message}
+              </motion.div>
+            )}
           </motion.form>
         </div>
       </section>
