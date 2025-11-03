@@ -108,7 +108,7 @@ export default function Home() {
     <main ref={ref} className="relative min-h-screen">
       {/* Hero Section */}
       <section className="relative h-screen flex items-center justify-center overflow-hidden">
-        {/* Background Image */}
+        {/* Blurred Background Layer */}
         <motion.div
           className="absolute inset-0 z-0"
           style={{ y: y1 }}
@@ -117,13 +117,33 @@ export default function Home() {
           transition={{ duration: 1.5, ease: "easeOut" }}
         >
           <Image
-            src="/photos/Bilde_1.jpg"
+            src="/photos/Bilde_3.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-cover object-center"
+            className="object-cover object-center blur-2xl scale-110"
             priority
           />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-white/40" />
+          <div className="absolute inset-0 bg-white/50" />
+        </motion.div>
+
+        {/* Sharp Center Image */}
+        <motion.div
+          className="absolute inset-0 z-0 flex items-center justify-center"
+          style={{ y: y1 }}
+          initial={{ scale: 1.1 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: 1.5, ease: "easeOut" }}
+        >
+          <div className="relative w-full h-full max-w-[2560px] mx-auto">
+            <Image
+              src="/photos/Bilde_1.jpg"
+              alt="Silje & Sindre"
+              fill
+              className="object-cover object-center"
+              priority
+            />
+          </div>
+          <div className="absolute inset-0 bg-white/30" />
         </motion.div>
 
         {/* Content */}
@@ -156,14 +176,27 @@ export default function Home() {
 
       {/* Date and Location Section */}
       <section ref={section2Ref} className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
-        {/* Background Image */}
+        {/* Blurred Background Layer */}
         <motion.div className="absolute inset-0 z-0" style={{ y: y2 }}>
           <Image
-            src="/photos/Bilde_2.jpg"
+            src="/photos/Bilde_3.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-cover"
+            className="object-cover blur-2xl scale-110"
           />
+          <div className="absolute inset-0 bg-white/50" />
+        </motion.div>
+
+        {/* Sharp Center Image */}
+        <motion.div className="absolute inset-0 z-0 flex items-center justify-center" style={{ y: y2 }}>
+          <div className="relative w-full h-full max-w-[2560px] mx-auto">
+            <Image
+              src="/photos/Bilde_2.jpg"
+              alt="Silje & Sindre"
+              fill
+              className="object-cover"
+            />
+          </div>
           <div className="absolute inset-0 bg-white/30" />
         </motion.div>
 
@@ -185,15 +218,28 @@ export default function Home() {
 
       {/* Ceremony Details Section */}
       <section ref={section3Ref} className="relative min-h-screen flex items-center justify-center px-4 py-20 overflow-hidden">
-        {/* Background Image - Blurred */}
+        {/* Blurred Background Layer - Extra Blur for sides */}
         <motion.div className="absolute inset-0 z-0" style={{ y: y3 }}>
           <Image
             src="/photos/Bilde_3.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-cover blur-md"
+            className="object-cover blur-2xl scale-110"
           />
-          <div className="absolute inset-0 bg-white/60" />
+          <div className="absolute inset-0 bg-white/50" />
+        </motion.div>
+
+        {/* Medium Blur Center Layer */}
+        <motion.div className="absolute inset-0 z-0 flex items-center justify-center" style={{ y: y3 }}>
+          <div className="relative w-full h-full max-w-[2560px] mx-auto">
+            <Image
+              src="/photos/Bilde_3.jpg"
+              alt="Silje & Sindre"
+              fill
+              className="object-cover blur-md"
+            />
+          </div>
+          <div className="absolute inset-0 bg-white/30" />
         </motion.div>
 
         <div className="relative z-10 max-w-4xl mx-auto w-full">
@@ -240,15 +286,28 @@ export default function Home() {
 
       {/* Share the Day Section */}
       <section ref={section4Ref} className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
-        {/* Background Image */}
+        {/* Blurred Background Layer */}
         <motion.div className="absolute inset-0 z-0" style={{ y: y4 }}>
           <Image
-            src="/photos/Bilde_4.jpg"
+            src="/photos/Bilde_3.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-cover"
+            className="object-cover blur-2xl scale-110"
           />
-          <div className="absolute inset-0 bg-white/60" />
+          <div className="absolute inset-0 bg-white/50" />
+        </motion.div>
+
+        {/* Sharp Center Image */}
+        <motion.div className="absolute inset-0 z-0 flex items-center justify-center" style={{ y: y4 }}>
+          <div className="relative w-full h-full max-w-[2560px] mx-auto">
+            <Image
+              src="/photos/Bilde_4.jpg"
+              alt="Silje & Sindre"
+              fill
+              className="object-cover"
+            />
+          </div>
+          <div className="absolute inset-0 bg-white/30" />
         </motion.div>
 
         <div className="relative z-10 max-w-4xl mx-auto w-full">
@@ -269,14 +328,27 @@ export default function Home() {
 
       {/* RSVP Section */}
       <section ref={section5Ref} className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
-        {/* Background Image */}
+        {/* Blurred Background Layer */}
         <motion.div className="absolute inset-0 z-0" style={{ y: y5 }}>
           <Image
-            src="/photos/Bilde_5.jpg"
+            src="/photos/Bilde_3.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-cover"
+            className="object-cover blur-2xl scale-110"
           />
+          <div className="absolute inset-0 bg-white/50" />
+        </motion.div>
+
+        {/* Sharp Center Image */}
+        <motion.div className="absolute inset-0 z-0 flex items-center justify-center" style={{ y: y5 }}>
+          <div className="relative w-full h-full max-w-[2560px] mx-auto">
+            <Image
+              src="/photos/Bilde_5.jpg"
+              alt="Silje & Sindre"
+              fill
+              className="object-cover"
+            />
+          </div>
           <div className="absolute inset-0 bg-white/30" />
         </motion.div>
 
