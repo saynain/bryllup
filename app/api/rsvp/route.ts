@@ -14,17 +14,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate environment variables
+    const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY;
+    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+
+    if (!serviceAccountEmail || !privateKey || !spreadsheetId) {
+      console.error("Missing required environment variables:", {
+        hasEmail: !!serviceAccountEmail,
+        hasKey: !!privateKey,
+        hasSheetId: !!spreadsheetId,
+      });
+      return NextResponse.json(
+        { error: "Server configuration error" },
+        { status: 500 }
+      );
+    }
+
+    // Format the private key - handle both escaped newlines and actual newlines
+    let formattedKey = privateKey;
+
+    // If the key contains literal \n strings, replace them with actual newlines
+    if (formattedKey.includes('\\n')) {
+      formattedKey = formattedKey.replace(/\\n/g, '\n');
+    }
+
+    // Remove any surrounding quotes that might have been added
+    formattedKey = formattedKey.replace(/^["']|["']$/g, '');
+
     // Set up Google Sheets API authentication
     const auth = new google.auth.GoogleAuth({
       credentials: {
-        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+        client_email: serviceAccountEmail,
+        private_key: formattedKey,
       },
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
 
     const sheets = google.sheets({ version: "v4", auth });
-    const spreadsheetId = process.env.GOOGLE_SHEET_ID;
 
     // Prepare the row data
     const timestamp = new Date().toLocaleString("nb-NO", {
