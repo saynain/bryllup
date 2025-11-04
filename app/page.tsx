@@ -108,7 +108,7 @@ export default function Home() {
   return (
     <main ref={ref} className="relative min-h-screen">
       {/* Hero Section */}
-      <section className="relative h-screen flex items-center justify-center overflow-hidden">
+      <section className="relative min-h-[70vh] md:h-screen flex items-center justify-center overflow-hidden">
         {/* Background Image */}
         <motion.div
           className="absolute inset-0 z-0"
@@ -121,7 +121,7 @@ export default function Home() {
             src="/photos/Bilde_1.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-cover object-center"
+            className="object-contain md:object-cover object-center"
             priority
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-white/40" />
@@ -276,7 +276,7 @@ export default function Home() {
             src="/photos/Bilde_5.jpg"
             alt="Silje & Sindre"
             fill
-            className="object-cover"
+            className="object-cover [object-position:35%_center] md:[object-position:center]"
           />
           <div className="absolute inset-0 bg-white/30" />
         </motion.div>
