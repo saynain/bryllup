@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Image from "next/image";
-import { Church, Camera, Wine, UtensilsCrossed, Cake, Music } from "lucide-react";
+import { Church, Wine, UtensilsCrossed, Heart } from "lucide-react";
 
 interface ScheduleEvent {
   time: string;
@@ -21,33 +21,19 @@ const schedule: ScheduleEvent[] = [
     icon: Church,
   },
   {
-    time: "15:00",
-    title: "Fotografering",
-    description: "Ved kirken",
-    icon: Camera,
-  },
-  {
-    time: "16:30",
+    time: "15:30",
     title: "Ankomst festlokale",
-    description: "Velkommen til Øvre-Eide Gård",
     icon: Wine,
   },
   {
-    time: "18:00",
+    time: "17:00",
     title: "Middag",
-    description: "Treretters meny",
     icon: UtensilsCrossed,
   },
   {
-    time: "21:00",
-    title: "Kake og taler",
-    icon: Cake,
-  },
-  {
-    time: "22:00",
-    title: "Fest og dans",
-    description: "Til den lyse morgen",
-    icon: Music,
+    time: "02:30",
+    title: "Brudeparet drar",
+    icon: Heart,
   },
 ];
 

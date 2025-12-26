@@ -4,8 +4,6 @@ import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 
 interface PhotoUploaderProps {
@@ -22,7 +20,6 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
   const [files, setFiles] = useState<FilePreview[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -96,9 +93,6 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
     for (const { file } of files) {
       const formData = new FormData();
       formData.append("file", file);
-      if (name.trim()) {
-        formData.append("uploadedBy", name.trim());
-      }
 
       try {
         const response = await fetch("/api/photos", {
@@ -132,21 +126,6 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
 
   return (
     <div className="space-y-6">
-      {/* Name input */}
-      <div className="space-y-2">
-        <Label htmlFor="uploader-name" className="text-base">
-          Ditt navn (valgfritt)
-        </Label>
-        <Input
-          id="uploader-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Skriv inn navnet ditt"
-          className="h-12 text-base"
-          disabled={uploading}
-        />
-      </div>
-
       {/* Drop zone */}
       <div
         onDragOver={handleDragOver}

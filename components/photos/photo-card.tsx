@@ -34,7 +34,7 @@ export function PhotoCard({ photo, onClick }: PhotoCardProps) {
         ) : (
           <Image
             src={photo.thumbnailUrl || photo.url}
-            alt={photo.uploadedBy ? `Bilde fra ${photo.uploadedBy}` : "Bryllupsbilde"}
+            alt="Bryllupsbilde"
             width={400}
             height={400}
             className={`w-full h-auto object-cover transition-all duration-300 group-hover:scale-105 ${
@@ -47,11 +47,6 @@ export function PhotoCard({ photo, onClick }: PhotoCardProps) {
         )}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
       </div>
-      {photo.uploadedBy && (
-        <p className="mt-2 text-xs text-[#8B7355] truncate">
-          Fra {photo.uploadedBy}
-        </p>
-      )}
     </motion.div>
   );
 }

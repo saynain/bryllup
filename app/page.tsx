@@ -6,7 +6,6 @@ import { motion, useScroll, useTransform } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ScheduleSection } from "@/components/sections/schedule-section";
 import { LocationSection } from "@/components/sections/location-section";
 import { PhotoSection } from "@/components/sections/photo-section";
@@ -130,6 +129,18 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-white/40" />
         </motion.div>
 
+        {/* Date at top */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="absolute top-6 left-0 right-0 z-20 flex items-center justify-center gap-4 text-white/90"
+        >
+          <span className="w-12 h-px bg-white/50" />
+          <span className="text-lg md:text-xl tracking-widest">15. AUGUST 2026</span>
+          <span className="w-12 h-px bg-white/50" />
+        </motion.div>
+
         {/* Content */}
         <div className="relative z-20 text-center px-4">
           <motion.p
@@ -144,20 +155,10 @@ export default function Home() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 1.2, delay: 0.2, ease: "easeOut" }}
-            className="font-script text-6xl md:text-8xl lg:text-9xl text-white drop-shadow-2xl mb-6"
+            className="text-6xl md:text-8xl lg:text-9xl text-white drop-shadow-2xl mb-6 font-light"
           >
             Silje & Sindre
           </motion.h1>
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, delay: 0.5, ease: "easeOut" }}
-            className="flex items-center justify-center gap-4 text-white/90"
-          >
-            <span className="w-12 h-px bg-white/50" />
-            <span className="text-lg md:text-xl tracking-widest">15. AUGUST 2026</span>
-            <span className="w-12 h-px bg-white/50" />
-          </motion.div>
         </div>
 
         {/* Scroll indicator */}
@@ -334,34 +335,32 @@ export default function Home() {
               />
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               <Label className="text-base">Kommer du?</Label>
-              <RadioGroup
-                value={formData.attending}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, attending: value })
-                }
-                required
-              >
-                <div className="flex items-center space-x-3 p-4 rounded-lg hover:bg-accent/50 transition-colors">
-                  <RadioGroupItem value="yes" id="yes" />
-                  <Label
-                    htmlFor="yes"
-                    className="text-base font-normal cursor-pointer flex-1"
-                  >
-                    Ja, jeg kommer!
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-3 p-4 rounded-lg hover:bg-accent/50 transition-colors">
-                  <RadioGroupItem value="no" id="no" />
-                  <Label
-                    htmlFor="no"
-                    className="text-base font-normal cursor-pointer flex-1"
-                  >
-                    Dessverre kan jeg ikke komme
-                  </Label>
-                </div>
-              </RadioGroup>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, attending: "yes" })}
+                  className={`p-4 rounded-xl border-2 text-left transition-all duration-200 ${
+                    formData.attending === "yes"
+                      ? "border-[#5D4E37] bg-[#5D4E37] text-white"
+                      : "border-[#B8A491] bg-white hover:border-[#8B7355] hover:bg-[#F5F0EB]"
+                  }`}
+                >
+                  <span className="text-base font-medium">Ja, jeg kommer!</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, attending: "no" })}
+                  className={`p-4 rounded-xl border-2 text-left transition-all duration-200 ${
+                    formData.attending === "no"
+                      ? "border-[#5D4E37] bg-[#5D4E37] text-white"
+                      : "border-[#B8A491] bg-white hover:border-[#8B7355] hover:bg-[#F5F0EB]"
+                  }`}
+                >
+                  <span className="text-base font-medium">Kan dessverre ikke</span>
+                </button>
+              </div>
             </div>
 
             {formData.attending === "yes" && (
