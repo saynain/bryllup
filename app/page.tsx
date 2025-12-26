@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ScheduleSection } from "@/components/sections/schedule-section";
+import { LocationSection } from "@/components/sections/location-section";
+import { PhotoSection } from "@/components/sections/photo-section";
 
 export default function Home() {
   const ref = useRef(null);
@@ -129,22 +132,32 @@ export default function Home() {
 
         {/* Content */}
         <div className="relative z-20 text-center px-4">
-          <motion.h1
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: "easeOut" }}
-            className="text-5xl md:text-7xl font-bold text-white drop-shadow-2xl mb-4 tracking-wide"
-          >
-            Vi gifter oss!
-          </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, delay: 0.3, ease: "easeOut" }}
-            className="text-3xl md:text-4xl text-white drop-shadow-lg tracking-wider"
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="text-lg md:text-xl text-white/90 tracking-[0.3em] uppercase mb-4 drop-shadow-lg"
+          >
+            Vi gifter oss
+          </motion.p>
+          <motion.h1
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1.2, delay: 0.2, ease: "easeOut" }}
+            className="font-script text-6xl md:text-8xl lg:text-9xl text-white drop-shadow-2xl mb-6"
           >
             Silje & Sindre
-          </motion.p>
+          </motion.h1>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.5, ease: "easeOut" }}
+            className="flex items-center justify-center gap-4 text-white/90"
+          >
+            <span className="w-12 h-px bg-white/50" />
+            <span className="text-lg md:text-xl tracking-widest">15. AUGUST 2026</span>
+            <span className="w-12 h-px bg-white/50" />
+          </motion.div>
         </div>
 
         {/* Scroll indicator */}
@@ -303,7 +316,7 @@ export default function Home() {
             viewport={{ once: true, amount: 0.2 }}
             transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }}
             onSubmit={handleSubmit}
-            className="bg-white rounded-2xl shadow-xl p-8 md:p-12 pb-4 md:pb-6 space-y-8"
+            className="wedding-card rounded-2xl p-8 md:p-12 pb-6 md:pb-8 space-y-8"
           >
             <div className="space-y-2">
               <Label htmlFor="name" className="text-base">
@@ -410,12 +423,15 @@ export default function Home() {
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`p-4 rounded-lg text-center ${
+                className={`p-5 rounded-xl text-center border ${
                   submitStatus.type === "success"
-                    ? "bg-green-100 text-green-800"
-                    : "bg-red-100 text-red-800"
+                    ? "bg-[#E8DED0]/50 text-[#5D4E37] border-[#B8A491]"
+                    : "bg-red-50 text-red-800 border-red-200"
                 }`}
               >
+                {submitStatus.type === "success" && (
+                  <span className="font-script text-2xl block mb-1">Tusen takk!</span>
+                )}
                 {submitStatus.message}
               </motion.div>
             )}
@@ -423,30 +439,14 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Footer with Map - DISABLED */}
-      {/* Uncomment this section to enable the map */}
-      {/* <section className="relative bg-gradient-to-b from-white to-background py-20 px-4">
-        <div className="max-w-4xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: false, amount: 0.3 }}
-            transition={{ duration: 0.9, ease: "easeOut" }}
-            className="relative h-96 md:h-[500px] rounded-2xl overflow-hidden shadow-2xl mb-12"
-          >
-            <iframe
-              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1966.0!2d5.3267772!3d60.4349495!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x463cfdd429037e91%3A0xe2a4e88929171a79!2s%C3%98vre-Eide%20G%C3%A5rd!5e0!3m2!1sen!2sno!4v1234567890!5m2!1sen!2sno"
-              width="100%"
-              height="100%"
-              style={{ border: 0 }}
-              allowFullScreen
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              title="Øvre-Eide Gård, Eidsvåg, Bergen"
-            />
-          </motion.div>
-        </div>
-      </section> */}
+      {/* Schedule Section */}
+      <ScheduleSection />
+
+      {/* Location Section with Map */}
+      <LocationSection />
+
+      {/* Photo Sharing Section */}
+      <PhotoSection />
 
     </main>
   );
