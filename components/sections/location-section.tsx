@@ -122,11 +122,16 @@ export function LocationSection() {
               Følg skiltene til parkeringsplassen.
             </p>
             <p>
-              <strong>Ved festlokalet:</strong> Øvre-Eide Gård har god parkeringskapasitet
-              på eiendommen. Følg skiltene når du ankommer.
+              <strong>Ved festlokalet:</strong> Parkering er merket med røde kryss
+              på området ved Øvre-Eide Gård.
+            </p>
+            <p>
+              <strong>Over natten:</strong> Ved det midterste røde krysset kan biler
+              som skal stå igjen til neste dag parkeres.
             </p>
             <p className="text-[#8B7355] text-sm">
-              Tips: Vurder å kjøre sammen eller bruke taxi hvis du planlegger å nyte kvelden fullt ut!
+              Se parkeringskartet fra stedet når du ankommer, og følg merking og
+              skilting på området.
             </p>
           </div>
         </motion.div>
