@@ -143,22 +143,22 @@ export default function Home() {
 
         {/* Content */}
         <div className="relative z-20 text-center px-4">
+          <motion.h1
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className="text-5xl md:text-7xl font-bold text-white drop-shadow-2xl mb-4 tracking-wide"
+          >
+            Vi gifter oss!
+          </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="text-lg md:text-xl text-white/90 tracking-[0.3em] uppercase mb-4 drop-shadow-lg"
-          >
-            Vi gifter oss
-          </motion.p>
-          <motion.h1
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 1.2, delay: 0.2, ease: "easeOut" }}
-            className="text-6xl md:text-8xl lg:text-9xl text-white drop-shadow-2xl mb-6 font-light"
+            transition={{ duration: 1, delay: 0.3, ease: "easeOut" }}
+            className="text-3xl md:text-4xl text-white drop-shadow-lg tracking-wider"
           >
             Silje & Sindre
-          </motion.h1>
+          </motion.p>
         </div>
 
         {/* Scroll indicator */}
