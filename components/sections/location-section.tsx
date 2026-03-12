@@ -1,9 +1,37 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Image from "next/image";
-import { MapPin, Car, Church, PartyPopper } from "lucide-react";
+import { MapPin, Car, Church, PartyPopper, X, ZoomIn } from "lucide-react";
+
+interface ParkingImage {
+  src: string;
+  alt: string;
+  title: string;
+  caption: string;
+}
+
+const parkingImages: ParkingImage[] = [
+  {
+    src: "/parking-route-map.png",
+    alt: "Kart som viser kjøreruten til Øvre-Eide Gård",
+    title: "Kjørerute",
+    caption: "Følg Jordalsveien inn mot Øvre-Eide når du nærmer deg stedet.",
+  },
+  {
+    src: "/parking-turn.png",
+    alt: "Innkjøring opp bakken ved Jordalsveien",
+    title: "Sving opp bakken",
+    caption: "Her skal dere kjøre opp bakken ved ankomst til parkeringen.",
+  },
+  {
+    src: "/parking-map.png",
+    alt: "Parkeringskart for Øvre-Eide Gård",
+    title: "Parkeringskart",
+    caption: "Røde kryss viser hvor det er satt av parkering på området.",
+  },
+];
 
 interface LocationCardProps {
   icon: React.ElementType;
@@ -45,11 +73,14 @@ function LocationCard({ icon: Icon, title, name, address, mapLink }: LocationCar
 
 export function LocationSection() {
   const sectionRef = useRef(null);
+  const [selectedParkingImageSrc, setSelectedParkingImageSrc] = useState<string | null>(null);
   const { scrollYProgress } = useScroll({
     target: sectionRef,
     offset: ["start end", "end start"],
   });
   const y = useTransform(scrollYProgress, [0, 1], ["-20%", "20%"]);
+  const selectedParkingImage =
+    parkingImages.find((image) => image.src === selectedParkingImageSrc) ?? null;
 
   return (
     <section
@@ -114,7 +145,9 @@ export function LocationSection() {
             <div className="p-2 rounded-full bg-[#E8DED0]">
               <Car className="w-5 h-5 text-[#8B7355]" />
             </div>
-            <h3 className="text-xl font-semibold text-[#5D4E37]">Parkering</h3>
+            <h3 className="text-xl font-semibold text-[#5D4E37]">
+              Veibeskrivelse og Parkering
+            </h3>
           </div>
           <div className="space-y-3 text-[#5D4E37]">
             <p>
@@ -132,6 +165,43 @@ export function LocationSection() {
             <p className="text-[#8B7355] text-sm">
               Se parkeringskartet fra stedet når du ankommer, og følg merking og
               skilting på området.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+              {parkingImages.map((image) => (
+                <button
+                  key={image.src}
+                  type="button"
+                  onClick={() => setSelectedParkingImageSrc(image.src)}
+                  className="group relative overflow-hidden rounded-2xl border border-[#D8CBB8] bg-[#F6F0E8] text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8B7355] focus-visible:ring-offset-2"
+                >
+                  <div className="relative aspect-[4/3] bg-[#F1E6D8] p-1.5">
+                    <Image
+                      src={image.src}
+                      alt={image.alt}
+                      fill
+                      sizes="(min-width: 768px) 220px, 45vw"
+                      className="object-contain transition-transform duration-500 group-hover:scale-[1.03]"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#2F261B]/80 via-[#2F261B]/15 to-transparent" />
+                    <div className="absolute bottom-0 left-0 right-0 p-3 text-white">
+                      <p className="text-[10px] uppercase tracking-[0.24em] text-white/70">
+                        Parkering
+                      </p>
+                      <div className="mt-1 flex items-end justify-between gap-2">
+                        <p className="text-sm font-semibold leading-tight">
+                          {image.title}
+                        </p>
+                        <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/15 backdrop-blur-sm">
+                          <ZoomIn className="h-4 w-4" />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[#8B7355] text-sm">
+              Klikk på et bilde for å åpne det i større format.
             </p>
           </div>
         </motion.div>
@@ -156,6 +226,43 @@ export function LocationSection() {
           />
         </motion.div>
       </div>
+
+      {selectedParkingImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#241C13]/80 p-4 backdrop-blur-md"
+          onClick={() => setSelectedParkingImageSrc(null)}
+        >
+          <div
+            className="relative w-full max-w-5xl rounded-[28px] border border-white/20 bg-white/95 p-3 shadow-2xl md:p-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              aria-label="Lukk parkeringskart"
+              onClick={() => setSelectedParkingImageSrc(null)}
+              className="absolute right-5 top-5 z-10 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[#2F261B]/75 text-white transition-colors hover:bg-[#2F261B]"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="mb-3 rounded-[22px] bg-[#F6F0E8] px-4 py-3 pr-16 text-[#5D4E37]">
+              <p className="text-xs uppercase tracking-[0.28em] text-[#8B7355]">
+                Parkering
+              </p>
+              <h4 className="mt-1 text-lg font-semibold">{selectedParkingImage.title}</h4>
+              <p className="mt-1 text-sm text-[#6D5B45]">{selectedParkingImage.caption}</p>
+            </div>
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[22px] bg-[#F6F0E8]">
+              <Image
+                src={selectedParkingImage.src}
+                alt={selectedParkingImage.alt}
+                fill
+                sizes="90vw"
+                className="object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
