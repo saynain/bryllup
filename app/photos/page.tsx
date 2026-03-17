@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
@@ -10,9 +10,11 @@ import { PhotoGrid } from "@/components/photos/photo-grid";
 
 export default function PhotosPage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const galleryRef = useRef<HTMLDivElement>(null);
 
   const handleUploadComplete = () => {
     setRefreshTrigger((prev) => prev + 1);
+    galleryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   return (
@@ -64,6 +66,7 @@ export default function PhotosPage() {
 
         {/* Gallery section */}
         <motion.div
+          ref={galleryRef}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
@@ -82,7 +85,7 @@ export default function PhotosPage() {
 
       {/* Footer */}
       <footer className="py-12 text-center border-t border-[#E8DED0]/50">
-        <span className="font-script text-3xl text-[#B8A491] block mb-4">S & S</span>
+        <span className="font-script text-3xl text-[#B8A491] block mb-4">Silje & Sindre</span>
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-[#8B7355] hover:text-[#5D4E37] transition-colors"
