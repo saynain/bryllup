@@ -32,7 +32,7 @@ export default function PhotosPage() {
             </Button>
           </Link>
           <div className="text-center">
-            <span className="font-script text-2xl text-[#5D4E37]">S & S</span>
+            <span className="font-script text-2xl text-[#5D4E37]">Silje & Sindre</span>
           </div>
           {photosUrl ? (
             <Button
