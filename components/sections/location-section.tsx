@@ -123,12 +123,12 @@ export function LocationSection() {
       {/* Background */}
       <motion.div className="absolute inset-0 z-0" style={{ y }}>
         <Image
-          src="/photos/Bilde_4.jpg"
+          src="/photos/Bilde_5.jpg"
           alt="Bakgrunn"
           fill
-          className="object-cover"
+          className="object-cover [object-position:35%_center] md:[object-position:center]"
         />
-        <div className="absolute inset-0 bg-white/60" />
+        <div className="absolute inset-0 bg-white/45" />
       </motion.div>
 
       <div className="relative z-10 max-w-4xl mx-auto w-full">

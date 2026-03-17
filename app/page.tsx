@@ -5,7 +5,6 @@ import Image from "next/image";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { LocationSection } from "@/components/sections/location-section";
 import { PhotoSection } from "@/components/sections/photo-section";
-import { WeddingInfoSection } from "@/components/sections/wedding-info-section";
 import { RSVPSection } from "@/components/sections/rsvp-section";
 
 export default function Home() {
@@ -21,7 +20,6 @@ export default function Home() {
   const section2Ref = useRef(null);
   const section3Ref = useRef(null);
   const section4Ref = useRef(null);
-  const section5Ref = useRef(null);
 
   const { scrollYProgress: section2Progress } = useScroll({
     target: section2Ref,
@@ -40,12 +38,6 @@ export default function Home() {
     offset: ["start end", "end start"]
   });
   const y4 = useTransform(section4Progress, [0, 1], ["-20%", "20%"]);
-
-  const { scrollYProgress: section5Progress } = useScroll({
-    target: section5Ref,
-    offset: ["start end", "end start"]
-  });
-  const y5 = useTransform(section5Progress, [0, 1], ["-20%", "20%"]);
 
   return (
     <main ref={ref} className="relative min-h-screen">
@@ -219,24 +211,6 @@ export default function Home() {
               Vi håper at du/dere vil dele denne store dagen med oss.
             </motion.p>
           </div>
-        </div>
-      </section>
-
-      {/* Wedding Information Section */}
-      <section ref={section5Ref} className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
-        {/* Background Image */}
-        <motion.div className="absolute inset-0 z-0" style={{ y: y5 }}>
-          <Image
-            src="/photos/Bilde_5.jpg"
-            alt="Silje & Sindre"
-            fill
-            className="object-cover [object-position:35%_center] md:[object-position:center]"
-          />
-          <div className="absolute inset-0 bg-white/30" />
-        </motion.div>
-
-        <div className="relative z-10 max-w-5xl mx-auto w-full">
-          <WeddingInfoSection />
         </div>
       </section>
 
