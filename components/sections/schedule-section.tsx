@@ -15,7 +15,7 @@ interface ScheduleEvent {
 // Placeholder schedule - replace with actual times
 const schedule: ScheduleEvent[] = [
   {
-    time: "14:00",
+    time: "15:00",
     title: "Vielse",
     description: "Arna kirke",
     icon: Church,

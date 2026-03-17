@@ -179,7 +179,7 @@ export default function Home() {
               transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
               className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
             >
-              Seremonien holdes i Arna kirke klokken 14:00, etterfulgt av middag og fest på kvelden.
+              Seremonien holdes i Arna kirke klokken 15:00, etterfulgt av middag og fest på kvelden.
             </motion.p>
             <motion.p
               initial={{ opacity: 0, y: 30 }}
