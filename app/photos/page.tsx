@@ -1,24 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, QrCode } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PhotoUploader } from "@/components/photos/photo-uploader";
 import { PhotoGrid } from "@/components/photos/photo-grid";
-import { QRCode } from "@/components/photos/qr-code";
 
 export default function PhotosPage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [showQR, setShowQR] = useState(false);
+  const galleryRef = useRef<HTMLDivElement>(null);
 
   const handleUploadComplete = () => {
     setRefreshTrigger((prev) => prev + 1);
+    galleryRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
-  const photosUrl = siteUrl ? `${siteUrl}/photos` : "";
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-[#F5F0EB] via-white to-[#F5F0EB]">
@@ -32,48 +29,13 @@ export default function PhotosPage() {
             </Button>
           </Link>
           <div className="text-center">
-            <span className="font-script text-2xl text-[#5D4E37]">S & S</span>
+            <span className="font-script text-2xl text-[#5D4E37]">Silje & Sindre</span>
           </div>
-          {photosUrl ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowQR(!showQR)}
-              className="gap-2 -mr-2"
-            >
-              <QrCode className="h-4 w-4" />
-              <span className="hidden sm:inline">QR-kode</span>
-            </Button>
-          ) : (
-            <div className="w-20" />
-          )}
+          <div className="w-20" />
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* QR Code section */}
-        {showQR && photosUrl && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mb-8"
-          >
-            <div className="bg-white rounded-2xl shadow-lg p-6 text-center">
-              <h2 className="text-lg font-medium text-[#5D4E37] mb-4">
-                Skann for å dele bilder
-              </h2>
-              <div className="flex justify-center">
-                <QRCode
-                  url={photosUrl}
-                  size={180}
-                  label="Del denne QR-koden på menyen eller bordkort"
-                />
-              </div>
-            </div>
-          </motion.div>
-        )}
-
         {/* Welcome section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -104,6 +66,7 @@ export default function PhotosPage() {
 
         {/* Gallery section */}
         <motion.div
+          ref={galleryRef}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.2 }}
@@ -122,7 +85,7 @@ export default function PhotosPage() {
 
       {/* Footer */}
       <footer className="py-12 text-center border-t border-[#E8DED0]/50">
-        <span className="font-script text-3xl text-[#B8A491] block mb-4">S & S</span>
+        <span className="font-script text-3xl text-[#B8A491] block mb-4">Silje & Sindre</span>
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-[#8B7355] hover:text-[#5D4E37] transition-colors"

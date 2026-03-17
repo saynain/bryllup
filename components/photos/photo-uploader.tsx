@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +15,8 @@ interface FilePreview {
   file: File;
   preview: string;
 }
+
+const MAX_PARALLEL_UPLOADS = 3;
 
 export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -80,6 +83,21 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
     });
   }, []);
 
+  const uploadSingleFile = useCallback(async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const response = await fetch("/api/photos", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || "Opplasting feilet");
+    }
+  }, []);
+
   const handleUpload = async () => {
     if (files.length === 0) return;
 
@@ -87,31 +105,36 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
     setProgress(0);
     setError(null);
 
+    const fileQueue = files.map(({ file }) => file);
+    let nextIndex = 0;
     let completed = 0;
-    let hasError = false;
+    let firstError: string | null = null;
 
-    for (const { file } of files) {
-      const formData = new FormData();
-      formData.append("file", file);
+    const worker = async () => {
+      while (nextIndex < fileQueue.length) {
+        const currentIndex = nextIndex++;
+        const file = fileQueue[currentIndex];
 
-      try {
-        const response = await fetch("/api/photos", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Opplasting feilet");
+        try {
+          await uploadSingleFile(file);
+        } catch (err) {
+          if (!firstError) {
+            firstError =
+              err instanceof Error ? err.message : "Opplasting feilet";
+          }
+        } finally {
+          completed++;
+          setProgress((completed / fileQueue.length) * 100);
         }
-      } catch (err) {
-        hasError = true;
-        setError(err instanceof Error ? err.message : "Opplasting feilet");
       }
+    };
 
-      completed++;
-      setProgress((completed / files.length) * 100);
-    }
+    await Promise.all(
+      Array.from(
+        { length: Math.min(MAX_PARALLEL_UPLOADS, fileQueue.length) },
+        () => worker()
+      )
+    );
 
     // Clean up previews
     files.forEach(({ preview }) => URL.revokeObjectURL(preview));
@@ -119,7 +142,9 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
     setProgress(0);
     setUploading(false);
 
-    if (!hasError) {
+    if (firstError) {
+      setError(firstError);
+    } else {
       onUploadComplete();
     }
   };
@@ -165,7 +190,10 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
               Dra og slipp bilder her
             </p>
             <p className="text-sm text-[#8B7355] mt-1">
-              eller bruk knappene under
+              eller velg bilder fra enheten din
+            </p>
+            <p className="text-xs text-[#9B8466] mt-2">
+              JPEG, PNG, WebP og HEIC. Maks 10 MB per bilde.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -214,10 +242,12 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
                   exit={{ opacity: 0, scale: 0.8 }}
                   className="relative aspect-square rounded-lg overflow-hidden bg-[#E8DED0]"
                 >
-                  <img
+                  <Image
                     src={preview}
                     alt={`Preview ${index + 1}`}
-                    className="w-full h-full object-cover"
+                    fill
+                    unoptimized
+                    className="object-cover"
                   />
                   {!uploading && (
                     <button

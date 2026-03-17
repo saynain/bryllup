@@ -13,6 +13,11 @@ interface PhotoGridProps {
   refreshTrigger?: number;
 }
 
+interface LoadPhotosOptions {
+  loadMore?: boolean;
+  cursorOverride?: string;
+}
+
 export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   const [photos, setPhotos] = useState<PhotoMetadata[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +27,10 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadPhotos = useCallback(async (loadMore = false) => {
+  const loadPhotos = useCallback(async ({
+    loadMore = false,
+    cursorOverride,
+  }: LoadPhotosOptions = {}) => {
     try {
       if (loadMore) {
         setLoadingMore(true);
@@ -33,8 +41,8 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
 
       const params = new URLSearchParams();
       params.set("limit", "24");
-      if (loadMore && cursor) {
-        params.set("cursor", cursor);
+      if (loadMore && cursorOverride) {
+        params.set("cursor", cursorOverride);
       }
 
       const response = await fetch(`/api/photos?${params}`);
@@ -53,20 +61,13 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [cursor]);
+  }, []);
 
-  // Load initial photos
   useEffect(() => {
-    loadPhotos(false);
-  }, [refreshTrigger]);
-
-  // Reload when refreshTrigger changes (after upload)
-  useEffect(() => {
-    if (refreshTrigger > 0) {
-      setCursor(undefined);
-      loadPhotos(false);
-    }
-  }, [refreshTrigger]);
+    setCursor(undefined);
+    setHasMore(false);
+    loadPhotos();
+  }, [refreshTrigger, loadPhotos]);
 
   if (loading) {
     return (
@@ -85,7 +86,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
     return (
       <div className="text-center py-12">
         <p className="text-[#8B7355] mb-4">{error}</p>
-        <Button variant="outline" onClick={() => loadPhotos(false)}>
+        <Button variant="outline" onClick={() => loadPhotos()}>
           <RefreshCw className="h-4 w-4 mr-2" />
           Prøv igjen
         </Button>
@@ -131,7 +132,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
         <div className="flex justify-center mt-8">
           <Button
             variant="outline"
-            onClick={() => loadPhotos(true)}
+            onClick={() => loadPhotos({ loadMore: true, cursorOverride: cursor })}
             disabled={loadingMore}
             className="h-12 px-8"
           >
