@@ -1,15 +1,24 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Image from "next/image";
-import { MapPin, Car, Church, PartyPopper, X, ZoomIn } from "lucide-react";
+import {
+  Car,
+  CircleAlert,
+  Church,
+  MapPin,
+  PartyPopper,
+  X,
+  ZoomIn,
+} from "lucide-react";
 
 interface ParkingImage {
   src: string;
   alt: string;
   title: string;
   caption: string;
+  details?: string[];
 }
 
 const parkingImages: ParkingImage[] = [
@@ -23,13 +32,19 @@ const parkingImages: ParkingImage[] = [
     src: "/parking-turn.png",
     alt: "Innkjøring opp bakken ved Jordalsveien",
     title: "Sving opp bakken",
-    caption: "Her skal dere kjøre opp bakken ved ankomst til parkeringen.",
+    caption:
+      "Hold til høyre og ikke kjør til venstre, selv om det er skiltet den veien. Veien til venstre er for industri.",
   },
   {
     src: "/parking-map.png",
     alt: "Parkeringskart for Øvre-Eide Gård",
     title: "Parkeringskart",
     caption: "Røde kryss viser hvor det er satt av parkering på området.",
+    details: [
+      "Kryss nr. 2: Denne parkeringen er reservert.",
+      "Første røde kryss: Her er det plass til omtrent 6 biler.",
+      "Nærmest gården: Denne parkeringsplassen har plass til ca. 8-10 biler.",
+    ],
   },
 ];
 
@@ -82,6 +97,24 @@ export function LocationSection() {
   const selectedParkingImage =
     parkingImages.find((image) => image.src === selectedParkingImageSrc) ?? null;
 
+  useEffect(() => {
+    if (!selectedParkingImage) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedParkingImageSrc(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedParkingImage]);
+
   return (
     <section
       ref={sectionRef}
@@ -106,7 +139,7 @@ export function LocationSection() {
           transition={{ duration: 0.8 }}
           className="text-4xl md:text-5xl font-semibold text-[#5D4E37] text-center mb-12 drop-shadow-lg"
         >
-          Lokasjon
+          Informasjon
         </motion.h2>
 
         {/* Location cards */}
@@ -133,76 +166,109 @@ export function LocationSection() {
           />
         </motion.div>
 
-        {/* Parking info */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.3 }}
           transition={{ duration: 0.8, delay: 0.2 }}
-          className="bg-white/90 backdrop-blur-sm rounded-xl p-6 shadow-lg mb-8"
+          className="bg-white/90 backdrop-blur-sm rounded-[28px] p-6 shadow-lg mb-8 md:p-8"
         >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 rounded-full bg-[#E8DED0]">
-              <Car className="w-5 h-5 text-[#8B7355]" />
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-full bg-[#E8DED0]">
+                <CircleAlert className="w-5 h-5 text-[#8B7355]" />
+              </div>
+              <h3 className="text-xl font-semibold text-[#5D4E37]">
+                Viktig informasjon
+              </h3>
             </div>
-            <h3 className="text-xl font-semibold text-[#5D4E37]">
-              Veibeskrivelse og Parkering
-            </h3>
-          </div>
-          <div className="space-y-3 text-[#5D4E37]">
-            <p>
-              <strong>Ved kirken:</strong> Det er gratis parkering ved Arna kirke.
-              Følg skiltene til parkeringsplassen.
+
+            <div className="space-y-3 text-[#5D4E37]">
+              <p>
+                <strong>På gården:</strong> Det er ikke tillatt å gå inn til dyrene
+                i stallen, låven eller i inngjerdingene utendørs.
+              </p>
+              <p>
+                <strong>Alkohol:</strong> Medbrakt alkohol er ikke tillatt på
+                lokalet.
+              </p>
+            </div>
+
+            <div className="my-6 h-px bg-[#E7DCCB]" />
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-full bg-[#E8DED0]">
+                <Car className="w-5 h-5 text-[#8B7355]" />
+              </div>
+              <h3 className="text-xl font-semibold text-[#5D4E37]">
+                Veibeskrivelse og parkering
+              </h3>
+            </div>
+
+            <p className="text-[#5D4E37] leading-relaxed">
+              Se kartene under for parkeringsinformasjon ved Øvre-Eide Gård.
             </p>
-            <p>
-              <strong>Ved festlokalet:</strong> Parkering er merket med røde kryss
-              på området ved Øvre-Eide Gård.
-            </p>
-            <p>
-              <strong>Over natten:</strong> Ved det midterste røde krysset kan biler
-              som skal stå igjen til neste dag parkeres.
-            </p>
-            <p className="text-[#8B7355] text-sm">
-              Se parkeringskartet fra stedet når du ankommer, og følg merking og
-              skilting på området.
-            </p>
-            <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
-              {parkingImages.map((image) => (
-                <button
-                  key={image.src}
-                  type="button"
-                  onClick={() => setSelectedParkingImageSrc(image.src)}
-                  className="group relative overflow-hidden rounded-2xl border border-[#D8CBB8] bg-[#F6F0E8] text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8B7355] focus-visible:ring-offset-2"
-                >
-                  <div className="relative aspect-[4/3] bg-[#F1E6D8] p-1.5">
-                    <Image
-                      src={image.src}
-                      alt={image.alt}
-                      fill
-                      sizes="(min-width: 768px) 220px, 45vw"
-                      className="object-contain transition-transform duration-500 group-hover:scale-[1.03]"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#2F261B]/80 via-[#2F261B]/15 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-3 text-white">
-                      <p className="text-[10px] uppercase tracking-[0.24em] text-white/70">
-                        Parkering
-                      </p>
-                      <div className="mt-1 flex items-end justify-between gap-2">
-                        <p className="text-sm font-semibold leading-tight">
-                          {image.title}
+
+            <div className="mt-4 space-y-3 text-[#5D4E37]">
+              <p>
+                <strong>Ved kirken:</strong> Det er gratis parkering ved Arna
+                kirke. Følg skiltene til parkeringsplassen.
+              </p>
+              <p>
+                <strong>Øvre-Eide Gård:</strong> Se oppmerkede parkeringsplasser
+                på parkeringskartet under. Det er plass til 14-16 biler totalt.
+                Dersom begge plassene er fulle, åpnes travbanen for parkering.
+                Ring 90843412 for spørsmål rundt parkering.
+              </p>
+            </div>
+
+            <div className="mt-6 rounded-[24px] border border-[#E7DCCB] bg-[#FCF8F2] p-4 md:p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2 rounded-full bg-[#EFE3D4]">
+                  <Car className="w-4 h-4 text-[#8B7355]" />
+                </div>
+                <h4 className="text-lg font-semibold text-[#5D4E37]">
+                  Parkeringskart
+                </h4>
+              </div>
+              <p className="text-[#8B7355] text-sm">
+                Klikk på kartene under for å åpne dem i større format.
+              </p>
+              <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3">
+                {parkingImages.map((image) => (
+                  <button
+                    key={image.src}
+                    type="button"
+                    onClick={() => setSelectedParkingImageSrc(image.src)}
+                    className="group relative overflow-hidden rounded-2xl border border-[#D8CBB8] bg-[#F6F0E8] text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8B7355] focus-visible:ring-offset-2"
+                  >
+                    <div className="relative aspect-[4/3] bg-[#F1E6D8] p-1.5">
+                      <Image
+                        src={image.src}
+                        alt={image.alt}
+                        fill
+                        sizes="(min-width: 768px) 220px, 45vw"
+                        className="object-contain transition-transform duration-500 group-hover:scale-[1.03]"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#2F261B]/80 via-[#2F261B]/15 to-transparent" />
+                      <div className="absolute bottom-0 left-0 right-0 p-3 text-white">
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-white/70">
+                          Parkering
                         </p>
-                        <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/15 backdrop-blur-sm">
-                          <ZoomIn className="h-4 w-4" />
-                        </span>
+                        <div className="mt-1 flex items-end justify-between gap-2">
+                          <p className="text-sm font-semibold leading-tight">
+                            {image.title}
+                          </p>
+                          <span className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-white/30 bg-white/15 backdrop-blur-sm">
+                            <ZoomIn className="h-4 w-4" />
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                ))}
+              </div>
             </div>
-            <p className="text-[#8B7355] text-sm">
-              Klikk på et bilde for å åpne det i større format.
-            </p>
           </div>
         </motion.div>
 
@@ -229,11 +295,11 @@ export function LocationSection() {
 
       {selectedParkingImage && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#241C13]/80 p-4 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#241C13]/80 p-5 backdrop-blur-md md:p-8"
           onClick={() => setSelectedParkingImageSrc(null)}
         >
           <div
-            className="relative w-full max-w-5xl rounded-[28px] border border-white/20 bg-white/95 p-3 shadow-2xl md:p-4"
+            className="relative w-full max-w-4xl overflow-y-auto rounded-[28px] border border-white/20 bg-white/95 p-3 shadow-2xl max-h-[calc(100vh-2.5rem)] md:max-h-[calc(100vh-4rem)] md:p-4"
             onClick={(event) => event.stopPropagation()}
           >
             <button
@@ -250,8 +316,15 @@ export function LocationSection() {
               </p>
               <h4 className="mt-1 text-lg font-semibold">{selectedParkingImage.title}</h4>
               <p className="mt-1 text-sm text-[#6D5B45]">{selectedParkingImage.caption}</p>
+              {selectedParkingImage.details && (
+                <div className="mt-3 space-y-2 border-t border-[#E3D7C5] pt-3 text-sm text-[#5D4E37]">
+                  {selectedParkingImage.details.map((detail) => (
+                    <p key={detail}>{detail}</p>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-[22px] bg-[#F6F0E8]">
+            <div className="relative h-[55vh] w-full overflow-hidden rounded-[22px] bg-[#F6F0E8] md:h-[62vh]">
               <Image
                 src={selectedParkingImage.src}
                 alt={selectedParkingImage.alt}
