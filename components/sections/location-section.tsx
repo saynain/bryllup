@@ -159,14 +159,14 @@ export function LocationSection() {
             icon={Church}
             title="Vielse"
             name="Arna kirke"
-            address="Garnesveien 22, 5261 Indre Arna"
+            address="Lakslia 19, 5261 Indre Arna"
             mapLink="https://maps.google.com/?q=Arna+kirke+Bergen"
           />
           <LocationCard
             icon={PartyPopper}
             title="Fest"
             name="Øvre-Eide Gård"
-            address="Eidsvågveien 341, 5105 Eidsvåg i Åsane"
+            address="Øvre-Eide 36, 5105 Eidsvåg i Åsane"
             mapLink="https://maps.google.com/?q=Øvre-Eide+Gård+Bergen"
           />
         </motion.div>
