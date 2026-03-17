@@ -183,10 +183,6 @@ export function RSVPSection() {
             >
               {isSubmitting ? "Sender..." : "Send svar"}
             </Button>
-            <p className="text-center text-[#5D4E37]">
-              <span className="text-sm">Gi en lyd innen </span>
-              <span className="text-base">01.02.2026</span>
-            </p>
           </div>
 
           {submitStatus.type && (

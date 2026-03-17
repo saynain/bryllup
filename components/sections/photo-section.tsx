@@ -23,7 +23,7 @@ export function PhotoSection() {
       {/* Background */}
       <motion.div className="absolute inset-0 z-0" style={{ y }}>
         <Image
-          src="/photos/Bilde_3.jpg"
+          src="/photos/Bilde_4.jpg"
           alt="Bakgrunn"
           fill
           className="object-cover"

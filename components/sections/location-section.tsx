@@ -19,6 +19,7 @@ interface ParkingImage {
   title: string;
   caption: string;
   details?: string[];
+  previewClassName?: string;
 }
 
 const parkingImages: ParkingImage[] = [
@@ -26,14 +27,17 @@ const parkingImages: ParkingImage[] = [
     src: "/parking-route-map.png",
     alt: "Kart som viser kjøreruten til Øvre-Eide Gård",
     title: "Kjørerute",
-    caption: "Følg Jordalsveien inn mot Øvre-Eide når du nærmer deg stedet.",
+    caption:
+      "Følg Jordalsveien inn mot Øvre-Eide Gård når du har tatt av motorveien i Eidsvåg.",
+    previewClassName: "object-[center_42%]",
   },
   {
     src: "/parking-turn.png",
     alt: "Innkjøring opp bakken ved Jordalsveien",
     title: "Sving opp bakken",
     caption:
-      "Hold til høyre og ikke kjør til venstre, selv om det er skiltet den veien. Veien til venstre er for industri.",
+      "Hold til høyre og ikke kjør til venstre, selv om det er skiltet den veien. Veien til venstre er for industri og privatbruk.",
+    previewClassName: "object-center",
   },
   {
     src: "/parking-map.png",
@@ -41,10 +45,11 @@ const parkingImages: ParkingImage[] = [
     title: "Parkeringskart",
     caption: "Røde kryss viser hvor det er satt av parkering på området.",
     details: [
-      "Kryss nr. 2: Denne parkeringen er reservert.",
       "Første røde kryss: Her er det plass til omtrent 6 biler.",
-      "Nærmest gården: Denne parkeringsplassen har plass til ca. 8-10 biler.",
+      "Andre røde kryss: Plassen er reservert til gjester som skal la bilen stå over natten.",
+      "Tredje røde kryss: Det er plass til 8-10 biler langs ridebanen.",
     ],
+    previewClassName: "object-[center_18%]",
   },
 ];
 
@@ -185,12 +190,11 @@ export function LocationSection() {
 
             <div className="space-y-3 text-[#5D4E37]">
               <p>
-                <strong>På gården:</strong> Det er ikke tillatt å gå inn til dyrene
-                i stallen, låven eller i inngjerdingene utendørs.
+                Det er ikke tillatt å gå inn til dyrene i stallen, låven eller i
+                inngjerdingene utendørs.
               </p>
               <p>
-                <strong>Alkohol:</strong> Medbrakt alkohol er ikke tillatt på
-                lokalet.
+                Medbrakt alkohol er ikke tillatt på lokalet.
               </p>
             </div>
 
@@ -217,7 +221,7 @@ export function LocationSection() {
               <p>
                 <strong>Øvre-Eide Gård:</strong> Se oppmerkede parkeringsplasser
                 på parkeringskartet under. Det er plass til 14-16 biler totalt.
-                Dersom begge plassene er fulle, åpnes travbanen for parkering.
+                Dersom begge plassene er fulle, åpnes ridebanen for parkering.
                 Ring 90843412 for spørsmål rundt parkering.
               </p>
             </div>
@@ -242,13 +246,15 @@ export function LocationSection() {
                     onClick={() => setSelectedParkingImageSrc(image.src)}
                     className="group relative overflow-hidden rounded-2xl border border-[#D8CBB8] bg-[#F6F0E8] text-left shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8B7355] focus-visible:ring-offset-2"
                   >
-                    <div className="relative aspect-[4/3] bg-[#F1E6D8] p-1.5">
+                    <div className="relative aspect-[4/3] bg-[#EADFCF]">
                       <Image
                         src={image.src}
                         alt={image.alt}
                         fill
                         sizes="(min-width: 768px) 220px, 45vw"
-                        className="object-contain transition-transform duration-500 group-hover:scale-[1.03]"
+                        className={`object-cover transition-transform duration-500 group-hover:scale-[1.04] ${
+                          image.previewClassName ?? "object-center"
+                        }`}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-[#2F261B]/80 via-[#2F261B]/15 to-transparent" />
                       <div className="absolute bottom-0 left-0 right-0 p-3 text-white">
