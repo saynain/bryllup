@@ -3,7 +3,6 @@
 import { useRef } from "react";
 import Image from "next/image";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { ScheduleSection } from "@/components/sections/schedule-section";
 import { LocationSection } from "@/components/sections/location-section";
 import { PhotoSection } from "@/components/sections/photo-section";
 import { WeddingInfoSection } from "@/components/sections/wedding-info-section";
@@ -240,9 +239,6 @@ export default function Home() {
           <WeddingInfoSection />
         </div>
       </section>
-
-      {/* Schedule Section */}
-      <ScheduleSection />
 
       {/* Location Section with Map */}
       <LocationSection />

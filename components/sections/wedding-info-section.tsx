@@ -52,9 +52,7 @@ export function WeddingInfoSection() {
         <InfoCard icon={CalendarDays} title="Når skjer det?" delay={0.1}>
           <p>Vi gifter oss lørdag 15. august 2026.</p>
           <p>Vielsen starter klokken 15:00.</p>
-          <p className="text-[#8B7355]">
-            Dagens program og rekkefølgen finner du lenger oppe på siden.
-          </p>
+          <p className="text-[#8B7355]">Mer informasjon finner du ellers på siden.</p>
         </InfoCard>
 
         <InfoCard icon={Church} title="Hvor skal vi?" delay={0.2}>
