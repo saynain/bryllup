@@ -165,7 +165,7 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
               Dra og slipp bilder her
             </p>
             <p className="text-sm text-[#8B7355] mt-1">
-              eller bruk knappene under
+              eller velg bilder fra enheten din
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
