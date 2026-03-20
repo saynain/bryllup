@@ -209,10 +209,6 @@ export function LocationSection() {
               </h3>
             </div>
 
-            <p className="text-[#5D4E37] leading-relaxed">
-              Se kartene under for parkeringsinformasjon ved Øvre-Eide Gård.
-            </p>
-
             <div className="mt-4 space-y-3 text-[#5D4E37]">
               <p>
                 <strong>Ved kirken:</strong> Det er gratis parkering ved Arna

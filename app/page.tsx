@@ -170,7 +170,7 @@ export default function Home() {
               transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
               className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
             >
-              Seremonien holdes i Arna kirke klokken 15:00, etterfulgt av middag og fest på kvelden.
+              Seremonien holdes i Arna kirke klokken 15:00.
             </motion.p>
           </div>
         </div>
@@ -192,15 +192,23 @@ export default function Home() {
         <div className="relative z-10 max-w-4xl mx-auto w-full">
           {/* Message Text */}
           <div className="text-center space-y-8 py-12">
-            <motion.p
-              initial={{ opacity: 0, y: 30 }}
+            <motion.div
+              initial={{ opacity: 0, y: 36 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-              className="text-2xl md:text-3xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
+              transition={{ duration: 0.8, ease: "easeOut", delay: 0.15 }}
+              className="mx-auto max-w-2xl rounded-[2rem] border border-white/50 bg-white/55 px-6 py-7 text-center shadow-[0_20px_60px_rgba(93,78,55,0.14)] backdrop-blur-md md:px-10 md:py-9"
             >
-              Vi håper at du/dere vil dele denne store dagen med oss.
-            </motion.p>
+              <p className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed">
+                Etter vielsen samles vi på Øvre-Eide Gård for litt mingling,
+                hvor det vil bli servert velkomstdrink.
+                <span className="mt-3 block">Middagen starter kl. 17:00.</span>
+              </p>
+              <div className="mx-auto my-6 h-px w-full max-w-md bg-[#B8A491]/45" />
+              <p className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed">
+                Vi håper at dere vil dele denne store dagen med oss.
+              </p>
+            </motion.div>
           </div>
         </div>
       </section>

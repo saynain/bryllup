@@ -29,7 +29,9 @@ export default function PhotosPage() {
             </Button>
           </Link>
           <div className="text-center">
-            <span className="font-script text-2xl text-[#5D4E37]">Silje & Sindre</span>
+            <span className="text-2xl font-medium tracking-wider text-[#5D4E37]">
+              Silje & Sindre
+            </span>
           </div>
           <div className="w-20" />
         </div>
@@ -43,7 +45,7 @@ export default function PhotosPage() {
           transition={{ duration: 0.6 }}
           className="text-center mb-10"
         >
-          <h2 className="font-script text-5xl md:text-6xl text-[#5D4E37] mb-4">
+          <h2 className="text-5xl md:text-6xl font-medium tracking-wide text-[#5D4E37] mb-4">
             Del dine bilder
           </h2>
           <div className="ornament mb-4">
@@ -85,7 +87,9 @@ export default function PhotosPage() {
 
       {/* Footer */}
       <footer className="py-12 text-center border-t border-[#E8DED0]/50">
-        <span className="font-script text-3xl text-[#B8A491] block mb-4">Silje & Sindre</span>
+        <span className="text-3xl font-medium tracking-wider text-[#B8A491] block mb-4">
+          Silje & Sindre
+        </span>
         <Link
           href="/"
           className="inline-flex items-center gap-2 text-[#8B7355] hover:text-[#5D4E37] transition-colors"
