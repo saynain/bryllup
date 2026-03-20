@@ -2,31 +2,39 @@
 @plugin "tailwindcss-animate";
 
 :root {
-  --background: 210 20% 98%;
-  --foreground: 215 16% 25%;
+  /* Wedding warm brown palette */
+  --background: 30 20% 97%;
+  --foreground: 30 25% 25%;
   --card: 0 0% 100%;
-  --card-foreground: 215 16% 25%;
+  --card-foreground: 30 25% 25%;
   --popover: 0 0% 100%;
-  --popover-foreground: 215 16% 25%;
-  --primary: 200 18% 46%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 210 15% 90%;
-  --secondary-foreground: 215 16% 25%;
-  --muted: 210 15% 95%;
-  --muted-foreground: 215 10% 46%;
-  --accent: 195 22% 85%;
-  --accent-foreground: 215 16% 25%;
+  --popover-foreground: 30 25% 25%;
+  --primary: 30 25% 38%;
+  --primary-foreground: 30 20% 97%;
+  --secondary: 30 15% 90%;
+  --secondary-foreground: 30 25% 25%;
+  --muted: 30 15% 95%;
+  --muted-foreground: 30 15% 50%;
+  --accent: 30 20% 90%;
+  --accent-foreground: 30 25% 25%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
-  --border: 214 15% 88%;
-  --input: 214 15% 88%;
-  --ring: 200 18% 46%;
-  --radius: 0.5rem;
-  --chart-1: 200 50% 60%;
-  --chart-2: 190 50% 70%;
-  --chart-3: 210 40% 80%;
-  --chart-4: 220 30% 50%;
-  --chart-5: 230 40% 60%;
+  --border: 30 20% 85%;
+  --input: 30 20% 85%;
+  --ring: 30 25% 45%;
+  --radius: 0.625rem;
+  --chart-1: 30 50% 60%;
+  --chart-2: 25 50% 70%;
+  --chart-3: 35 40% 80%;
+  --chart-4: 20 30% 50%;
+  --chart-5: 40 40% 60%;
+
+  /* Wedding theme colors */
+  --wedding-brown: #5D4E37;
+  --wedding-taupe: #8B7355;
+  --wedding-sand: #B8A491;
+  --wedding-cream: #E8DED0;
+  --wedding-ivory: #F5F0EB;
 }
 
 .dark {
@@ -99,4 +107,113 @@ button[role="radio"]:focus-visible,
 button[role="radio"][data-state="checked"] {
   box-shadow: none !important;
   outline: none !important;
+}
+
+/* Script font class for romantic accents */
+.font-script {
+  font-family: var(--font-italianno), cursive;
+}
+
+/* Decorative ornament */
+.ornament {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.ornament::before,
+.ornament::after {
+  content: '';
+  height: 1px;
+  width: 60px;
+  background: linear-gradient(90deg, transparent, var(--wedding-sand), transparent);
+}
+
+/* Elegant card styling */
+.wedding-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--wedding-cream);
+  box-shadow:
+    0 4px 6px -1px rgba(93, 78, 55, 0.05),
+    0 10px 20px -5px rgba(93, 78, 55, 0.08);
+}
+
+/* Subtle texture overlay for sections */
+.texture-overlay {
+  position: relative;
+}
+
+.texture-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.015;
+  pointer-events: none;
+}
+
+/* Improved input focus glow */
+input:focus-visible,
+textarea:focus-visible {
+  box-shadow: 0 0 0 3px rgba(139, 115, 85, 0.15);
+}
+
+/* Better tap targets for mobile */
+@media (max-width: 768px) {
+  button,
+  [role="button"],
+  input[type="radio"] + label,
+  a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Elegant selection color */
+::selection {
+  background: var(--wedding-cream);
+  color: var(--wedding-brown);
+}
+
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--wedding-ivory);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--wedding-sand);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--wedding-taupe);
+}
+
+/* Staggered animation delays utility */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+
+/* Fade in up animation */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.8s ease-out forwards;
 }

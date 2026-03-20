@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useRef } from "react";
 import Image from "next/image";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { LocationSection } from "@/components/sections/location-section";
+import { PhotoSection } from "@/components/sections/photo-section";
+import { RSVPSection } from "@/components/sections/rsvp-section";
 
 export default function Home() {
   const ref = useRef(null);
@@ -21,7 +20,6 @@ export default function Home() {
   const section2Ref = useRef(null);
   const section3Ref = useRef(null);
   const section4Ref = useRef(null);
-  const section5Ref = useRef(null);
 
   const { scrollYProgress: section2Progress } = useScroll({
     target: section2Ref,
@@ -40,70 +38,6 @@ export default function Home() {
     offset: ["start end", "end start"]
   });
   const y4 = useTransform(section4Progress, [0, 1], ["-20%", "20%"]);
-
-  const { scrollYProgress: section5Progress } = useScroll({
-    target: section5Ref,
-    offset: ["start end", "end start"]
-  });
-  const y5 = useTransform(section5Progress, [0, 1], ["-20%", "20%"]);
-
-  const [formData, setFormData] = useState({
-    name: "",
-    attending: "",
-    guests: "",
-    dietaryRestrictions: "",
-  });
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState<{
-    type: "success" | "error" | null;
-    message: string;
-  }>({ type: null, message: "" });
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setSubmitStatus({ type: null, message: "" });
-
-    try {
-      const response = await fetch("/api/rsvp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Noe gikk galt");
-      }
-
-      setSubmitStatus({
-        type: "success",
-        message: "Takk for svar!",
-      });
-
-      // Reset form after successful submission
-      setFormData({
-        name: "",
-        attending: "",
-        guests: "",
-        dietaryRestrictions: "",
-      });
-    } catch (error) {
-      setSubmitStatus({
-        type: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Kunne ikke sende svar. Vennligst prøv igjen.",
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   return (
     <main ref={ref} className="relative min-h-screen">
@@ -125,6 +59,18 @@ export default function Home() {
             priority
           />
           <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-white/40" />
+        </motion.div>
+
+        {/* Date at top */}
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="absolute top-6 left-0 right-0 z-20 flex items-center justify-center gap-4 text-white/90"
+        >
+          <span className="w-12 h-px bg-white/50" />
+          <span className="text-lg md:text-xl tracking-widest">15. AUGUST 2026</span>
+          <span className="w-12 h-px bg-white/50" />
         </motion.div>
 
         {/* Content */}
@@ -224,16 +170,7 @@ export default function Home() {
               transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
               className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
             >
-              Seremonien holdes i Arna kirke klokken 14:00, etterfulgt av middag og fest på kvelden.
-            </motion.p>
-            <motion.p
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.8, ease: "easeOut", delay: 0.4 }}
-              className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg mt-2"
-            >
-              Mer informasjon kommer.
+              Seremonien holdes i Arna kirke klokken 15:00.
             </motion.p>
           </div>
         </div>
@@ -255,198 +192,35 @@ export default function Home() {
         <div className="relative z-10 max-w-4xl mx-auto w-full">
           {/* Message Text */}
           <div className="text-center space-y-8 py-12">
-            <motion.p
-              initial={{ opacity: 0, y: 30 }}
+            <motion.div
+              initial={{ opacity: 0, y: 36 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-              className="text-2xl md:text-3xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
+              transition={{ duration: 0.8, ease: "easeOut", delay: 0.15 }}
+              className="mx-auto max-w-2xl rounded-[2rem] border border-white/50 bg-white/55 px-6 py-7 text-center shadow-[0_20px_60px_rgba(93,78,55,0.14)] backdrop-blur-md md:px-10 md:py-9"
             >
-              Vi håper at du/dere vil dele denne store dagen med oss.
-            </motion.p>
+              <p className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed">
+                Etter vielsen samles vi på Øvre-Eide Gård for litt mingling,
+                hvor det vil bli servert velkomstdrink.
+                <span className="mt-3 block">Middagen starter kl. 17:00.</span>
+              </p>
+              <div className="mx-auto my-6 h-px w-full max-w-md bg-[#B8A491]/45" />
+              <p className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed">
+                Vi håper at dere vil dele denne store dagen med oss.
+              </p>
+            </motion.div>
           </div>
         </div>
       </section>
 
+      {/* Location Section with Map */}
+      <LocationSection />
+
+      {/* Photo Sharing Section */}
+      <PhotoSection />
+
       {/* RSVP Section */}
-      <section ref={section5Ref} className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
-        {/* Background Image */}
-        <motion.div className="absolute inset-0 z-0" style={{ y: y5 }}>
-          <Image
-            src="/photos/Bilde_5.jpg"
-            alt="Silje & Sindre"
-            fill
-            className="object-cover [object-position:35%_center] md:[object-position:center]"
-          />
-          <div className="absolute inset-0 bg-white/30" />
-        </motion.div>
-
-        <div className="relative z-10 max-w-2xl mx-auto w-full">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.3 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-            className="text-center mb-12"
-          >
-            <h2 className="text-4xl md:text-5xl font-semibold text-[#5D4E37] mb-4 drop-shadow-lg">
-              Kan du komme?
-            </h2>
-            <p className="text-2xl text-[#5D4E37] drop-shadow-lg">
-              Vi gleder oss til å feire med dere!
-            </p>
-          </motion.div>
-
-          <motion.form
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, amount: 0.2 }}
-            transition={{ duration: 0.9, ease: "easeOut", delay: 0.2 }}
-            onSubmit={handleSubmit}
-            className="bg-white rounded-2xl shadow-xl p-8 md:p-12 pb-4 md:pb-6 space-y-8"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="name" className="text-base">
-                Navn
-              </Label>
-              <Input
-                id="name"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="Ditt fulle navn"
-                required
-                className="h-12 text-base"
-              />
-            </div>
-
-            <div className="space-y-4">
-              <Label className="text-base">Kommer du?</Label>
-              <RadioGroup
-                value={formData.attending}
-                onValueChange={(value) =>
-                  setFormData({ ...formData, attending: value })
-                }
-                required
-              >
-                <div className="flex items-center space-x-3 p-4 rounded-lg hover:bg-accent/50 transition-colors">
-                  <RadioGroupItem value="yes" id="yes" />
-                  <Label
-                    htmlFor="yes"
-                    className="text-base font-normal cursor-pointer flex-1"
-                  >
-                    Ja, jeg kommer!
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-3 p-4 rounded-lg hover:bg-accent/50 transition-colors">
-                  <RadioGroupItem value="no" id="no" />
-                  <Label
-                    htmlFor="no"
-                    className="text-base font-normal cursor-pointer flex-1"
-                  >
-                    Dessverre kan jeg ikke komme
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {formData.attending === "yes" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="guests" className="text-base">
-                    Antall gjester (inkludert deg selv)
-                  </Label>
-                  <Input
-                    id="guests"
-                    type="number"
-                    min="1"
-                    value={formData.guests}
-                    onChange={(e) =>
-                      setFormData({ ...formData, guests: e.target.value })
-                    }
-                    placeholder="1"
-                    required
-                    className="h-12 text-base"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="dietary" className="text-base">
-                    Allergier?
-                  </Label>
-                  <Input
-                    id="dietary"
-                    value={formData.dietaryRestrictions}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        dietaryRestrictions: e.target.value,
-                      })
-                    }
-                    placeholder="Vegetar, allergier, etc."
-                    className="h-12 text-base"
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="space-y-2">
-              <Button
-                type="submit"
-                size="lg"
-                className="w-full h-12 text-base font-semibold"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? "Sender..." : "Send svar"}
-              </Button>
-              <p className="text-center text-[#5D4E37]">
-                <span className="text-sm">Gi en lyd innen </span>
-                <span className="text-base">01.02.2026</span>
-              </p>
-            </div>
-
-            {submitStatus.type && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`p-4 rounded-lg text-center ${
-                  submitStatus.type === "success"
-                    ? "bg-green-100 text-green-800"
-                    : "bg-red-100 text-red-800"
-                }`}
-              >
-                {submitStatus.message}
-              </motion.div>
-            )}
-          </motion.form>
-        </div>
-      </section>
-
-      {/* Footer with Map - DISABLED */}
-      {/* Uncomment this section to enable the map */}
-      {/* <section className="relative bg-gradient-to-b from-white to-background py-20 px-4">
-        <div className="max-w-4xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: false, amount: 0.3 }}
-            transition={{ duration: 0.9, ease: "easeOut" }}
-            className="relative h-96 md:h-[500px] rounded-2xl overflow-hidden shadow-2xl mb-12"
-          >
-            <iframe
-              src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d1966.0!2d5.3267772!3d60.4349495!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x463cfdd429037e91%3A0xe2a4e88929171a79!2s%C3%98vre-Eide%20G%C3%A5rd!5e0!3m2!1sen!2sno!4v1234567890!5m2!1sen!2sno"
-              width="100%"
-              height="100%"
-              style={{ border: 0 }}
-              allowFullScreen
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              title="Øvre-Eide Gård, Eidsvåg, Bergen"
-            />
-          </motion.div>
-        </div>
-      </section> */}
+      <RSVPSection />
 
     </main>
   );
