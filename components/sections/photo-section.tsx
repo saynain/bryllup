@@ -18,17 +18,17 @@ export function PhotoSection() {
   return (
     <section
       ref={sectionRef}
-      className="relative min-h-[70vh] flex items-center justify-center px-4 py-20 overflow-hidden"
+      className="relative min-h-[100vh] flex items-center justify-center px-4 py-20 overflow-hidden"
     >
       {/* Background */}
       <motion.div className="absolute inset-0 z-0" style={{ y }}>
         <Image
-          src="/photos/Bilde_4.jpg"
+          src="/photos/IMG_3150.jpg"
           alt="Bakgrunn"
           fill
-          className="object-cover"
+          className="object-cover [object-position:center_38%]"
         />
-        <div className="absolute inset-0 bg-gradient-to-b from-white/50 via-white/70 to-white/50" />
+        <div className="absolute inset-0 bg-gradient-to-b from-white/30 via-white/45 to-white/35" />
       </motion.div>
 
       <div className="relative z-10 max-w-2xl mx-auto w-full text-center">

@@ -6,6 +6,7 @@ import { motion, useScroll, useTransform } from "framer-motion";
 import { LocationSection } from "@/components/sections/location-section";
 import { PhotoSection } from "@/components/sections/photo-section";
 import { RSVPSection } from "@/components/sections/rsvp-section";
+import { WishlistSection } from "@/components/sections/wishlist-section";
 
 export default function Home() {
   const ref = useRef(null);
@@ -218,6 +219,9 @@ export default function Home() {
 
       {/* Photo Sharing Section */}
       <PhotoSection />
+
+      {/* Wishlist Section */}
+      <WishlistSection />
 
       {/* RSVP Section */}
       <RSVPSection />
