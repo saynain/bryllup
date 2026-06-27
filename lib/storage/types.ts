@@ -4,6 +4,9 @@ export interface PhotoMetadata {
   filename: string;
   originalName: string;
   mimeType: string;
+  mediaType?: "image" | "video";
+  provider?: string;
+  status?: "pending" | "processing" | "ready" | "error";
   size: number;
   uploadedAt: Date;
   uploadedBy?: string;

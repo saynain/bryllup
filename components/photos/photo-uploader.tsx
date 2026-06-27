@@ -1,26 +1,45 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import Image from "next/image";
+/* eslint-disable @next/next/no-img-element */
+
+import { useState, useCallback, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Image as ImageIcon, Camera } from "lucide-react";
+import {
+  Upload,
+  X,
+  Image as ImageIcon,
+  Camera,
+  Film,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { isCloudflareMediaEnabled, uploadMediaFile } from "@/lib/media/client";
 
 interface PhotoUploaderProps {
   onUploadComplete: () => void;
 }
 
-interface FilePreview {
+type UploadStatus = "queued" | "uploading" | "done" | "error";
+type MediaType = "image" | "video";
+
+interface UploadItem {
+  id: string;
   file: File;
-  preview: string;
+  preview?: string;
+  type: MediaType;
+  status: UploadStatus;
+  progress: number;
+  error?: string;
 }
 
-const MAX_PARALLEL_UPLOADS = 3;
+const MAX_PREVIEW_ITEMS = 18;
+const MAX_UPLOAD_RETRIES = 2;
 
 export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
-  const [files, setFiles] = useState<FilePreview[]>([]);
+  const [files, setFiles] = useState<UploadItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -29,21 +48,38 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
 
   const handleFiles = useCallback((newFiles: FileList | File[]) => {
     setError(null);
-    const imageFiles = Array.from(newFiles).filter((f) =>
-      f.type.startsWith("image/")
+    const supportedFiles = Array.from(newFiles).filter(
+      (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
     );
 
-    if (imageFiles.length === 0) {
-      setError("Velg kun bildefiler");
+    if (supportedFiles.length === 0) {
+      setError("Velg kun bilder eller videoer");
       return;
     }
 
-    const previews: FilePreview[] = imageFiles.map((file) => ({
-      file,
-      preview: URL.createObjectURL(file),
-    }));
+    if (!isCloudflareMediaEnabled() && supportedFiles.some((file) => file.type.startsWith("video/"))) {
+      setError("Videoopplasting krever at Cloudflare media-API er aktivert");
+      return;
+    }
 
-    setFiles((prev) => [...prev, ...previews]);
+    setFiles((prev) => {
+      const previewSlots = Math.max(MAX_PREVIEW_ITEMS - prev.length, 0);
+      const nextItems = supportedFiles.map((file, index): UploadItem => {
+        const type = file.type.startsWith("video/") ? "video" : "image";
+        const shouldPreview = index < previewSlots && type === "image";
+
+        return {
+          id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+          file,
+          type,
+          preview: shouldPreview ? URL.createObjectURL(file) : undefined,
+          status: "queued",
+          progress: 0,
+        };
+      });
+
+      return [...prev, ...nextItems];
+    });
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -77,26 +113,38 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
   const removeFile = useCallback((index: number) => {
     setFiles((prev) => {
       const newFiles = [...prev];
-      URL.revokeObjectURL(newFiles[index].preview);
+      if (newFiles[index].preview) {
+        URL.revokeObjectURL(newFiles[index].preview);
+      }
       newFiles.splice(index, 1);
       return newFiles;
     });
   }, []);
 
-  const uploadSingleFile = useCallback(async (file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch("/api/photos", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error || "Opplasting feilet");
-    }
+  const updateFile = useCallback((id: string, patch: Partial<UploadItem>) => {
+    setFiles((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    );
   }, []);
+
+  const uploadSingleFile = useCallback(
+    async (item: UploadItem) => {
+      updateFile(item.id, { status: "uploading", progress: 0, error: undefined });
+
+      await retry(async () => {
+        await uploadMediaFile(item.file, {
+          onProgress: ({ loaded, total }) => {
+            updateFile(item.id, {
+              progress: total > 0 ? Math.round((loaded / total) * 100) : 0,
+            });
+          },
+        });
+      });
+
+      updateFile(item.id, { status: "done", progress: 100 });
+    },
+    [updateFile]
+  );
 
   const handleUpload = async () => {
     if (files.length === 0) return;
@@ -104,24 +152,34 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
     setUploading(true);
     setProgress(0);
     setError(null);
+    setFiles((prev) =>
+      prev.map((item) =>
+        item.status === "error"
+          ? { ...item, status: "queued", error: undefined, progress: 0 }
+          : item
+      )
+    );
 
-    const fileQueue = files.map(({ file }) => file);
+    const fileQueue = [...files];
     let nextIndex = 0;
     let completed = 0;
-    let firstError: string | null = null;
+    let failed = 0;
+    let uploaded = 0;
 
     const worker = async () => {
       while (nextIndex < fileQueue.length) {
         const currentIndex = nextIndex++;
-        const file = fileQueue[currentIndex];
+        const item = fileQueue[currentIndex];
 
         try {
-          await uploadSingleFile(file);
+          await uploadSingleFile(item);
+          uploaded++;
         } catch (err) {
-          if (!firstError) {
-            firstError =
-              err instanceof Error ? err.message : "Opplasting feilet";
-          }
+          failed++;
+          updateFile(item.id, {
+            status: "error",
+            error: err instanceof Error ? err.message : "Opplasting feilet",
+          });
         } finally {
           completed++;
           setProgress((completed / fileQueue.length) * 100);
@@ -129,25 +187,58 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
       }
     };
 
+    const concurrency = getUploadConcurrency(fileQueue.length);
     await Promise.all(
       Array.from(
-        { length: Math.min(MAX_PARALLEL_UPLOADS, fileQueue.length) },
+        { length: Math.min(concurrency, fileQueue.length) },
         () => worker()
       )
     );
 
-    // Clean up previews
-    files.forEach(({ preview }) => URL.revokeObjectURL(preview));
-    setFiles([]);
-    setProgress(0);
+    setFiles((prev) => {
+      const remaining = prev.filter((item) => item.status === "error");
+      prev.forEach((item) => {
+        if (item.status !== "error" && item.preview) {
+          URL.revokeObjectURL(item.preview);
+        }
+      });
+      return remaining.map((item) => ({ ...item, status: "queued", progress: 0 }));
+    });
+
     setUploading(false);
 
-    if (firstError) {
-      setError(firstError);
-    } else {
+    if (uploaded > 0) {
       onUploadComplete();
     }
+
+    if (failed > 0) {
+      setError(
+        `${failed} av ${fileQueue.length} filer feilet. Prøv igjen for filene som står igjen.`
+      );
+    } else {
+      setProgress(0);
+    }
   };
+
+  const selectedSummary = useMemo(() => {
+    const imageCount = files.filter((item) => item.type === "image").length;
+    const videoCount = files.filter((item) => item.type === "video").length;
+
+    if (imageCount > 0 && videoCount > 0) {
+      return `${imageCount} ${imageCount === 1 ? "bilde" : "bilder"} og ${videoCount} ${
+        videoCount === 1 ? "video" : "videoer"
+      } valgt`;
+    }
+
+    if (videoCount > 0) {
+      return `${videoCount} ${videoCount === 1 ? "video" : "videoer"} valgt`;
+    }
+
+    return `${imageCount} ${imageCount === 1 ? "bilde" : "bilder"} valgt`;
+  }, [files]);
+
+  const previewItems = files.slice(0, MAX_PREVIEW_ITEMS);
+  const hiddenPreviewCount = Math.max(files.length - previewItems.length, 0);
 
   return (
     <div className="space-y-6">
@@ -165,7 +256,7 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,video/*"
           multiple
           onChange={handleFileInput}
           className="hidden"
@@ -193,7 +284,7 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
               eller velg bilder fra enheten din
             </p>
             <p className="text-xs text-[#9B8466] mt-2">
-              JPEG, PNG, WebP og HEIC. Maks 10 MB per bilde.
+              Bilder og videoer fra mobilen lastes opp i en mobilvennlig kø.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -231,24 +322,50 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
             className="space-y-4"
           >
             <p className="text-sm font-medium text-[#5D4E37]">
-              {files.length} {files.length === 1 ? "bilde" : "bilder"} valgt
+              {selectedSummary}
             </p>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-              {files.map(({ preview }, index) => (
+              {previewItems.map((item, index) => (
                 <motion.div
-                  key={preview}
+                  key={item.id}
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.8 }}
                   className="relative aspect-square rounded-lg overflow-hidden bg-[#E8DED0]"
                 >
-                  <Image
-                    src={preview}
-                    alt={`Preview ${index + 1}`}
-                    fill
-                    unoptimized
-                    className="object-cover"
-                  />
+                  {item.preview ? (
+                    <img
+                      src={item.preview}
+                      alt={`Preview ${index + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-[#8B7355]">
+                      {item.type === "video" ? (
+                        <Film className="h-6 w-6" />
+                      ) : (
+                        <ImageIcon className="h-6 w-6" />
+                      )}
+                      <span className="max-w-full truncate px-2 text-xs">
+                        {item.file.name}
+                      </span>
+                    </div>
+                  )}
+                  {item.status === "uploading" && (
+                    <div className="absolute inset-x-0 bottom-0 bg-black/55 px-2 py-1 text-center text-xs text-white">
+                      {item.progress}%
+                    </div>
+                  )}
+                  {item.status === "done" && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-white">
+                      <CheckCircle2 className="h-7 w-7" />
+                    </div>
+                  )}
+                  {item.status === "error" && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-red-950/50 text-white">
+                      <AlertCircle className="h-7 w-7" />
+                    </div>
+                  )}
                   {!uploading && (
                     <button
                       onClick={() => removeFile(index)}
@@ -259,6 +376,11 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
                   )}
                 </motion.div>
               ))}
+              {hiddenPreviewCount > 0 && (
+                <div className="flex aspect-square items-center justify-center rounded-lg bg-[#E8DED0] text-sm font-medium text-[#8B7355]">
+                  +{hiddenPreviewCount}
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -294,9 +416,40 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
         >
           {uploading
             ? "Laster opp..."
-            : `Last opp ${files.length} ${files.length === 1 ? "bilde" : "bilder"}`}
+            : `Last opp ${files.length} ${files.length === 1 ? "fil" : "filer"}`}
         </Button>
       )}
     </div>
   );
+}
+
+async function retry(operation: () => Promise<void>): Promise<void> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
+    try {
+      await operation();
+      return;
+    } catch (error) {
+      lastError = error;
+      await wait(700 * (attempt + 1));
+    }
+  }
+
+  throw lastError;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function getUploadConcurrency(fileCount: number): number {
+  const isMobile =
+    window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 768;
+
+  if (isMobile) {
+    return 1;
+  }
+
+  return fileCount > 20 ? 2 : 3;
 }

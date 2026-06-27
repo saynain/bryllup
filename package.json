@@ -7,7 +7,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "cf:media:dev": "npx wrangler dev --config cloudflare/media-worker/wrangler.toml",
+    "cf:media:deploy": "npx wrangler deploy --config cloudflare/media-worker/wrangler.toml",
+    "cf:media:migrate": "npx wrangler d1 migrations apply bryllup-media --remote --config cloudflare/media-worker/wrangler.toml"
   },
   "keywords": [],
   "author": "",
