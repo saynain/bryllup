@@ -183,6 +183,7 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
     let completed = 0;
     let failed = 0;
     let uploaded = 0;
+    let firstError: string | null = null;
 
     const worker = async () => {
       while (nextIndex < fileQueue.length) {
@@ -193,10 +194,12 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
           await uploadSingleFile(item);
           uploaded++;
         } catch (err) {
+          const message = err instanceof Error ? err.message : "Opplasting feilet";
           failed++;
+          firstError ||= message;
           updateFile(item.id, {
             status: "error",
-            error: err instanceof Error ? err.message : "Opplasting feilet",
+            error: message,
           });
         } finally {
           completed++;
@@ -231,7 +234,9 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
 
     if (failed > 0) {
       setError(
-        `${failed} av ${fileQueue.length} filer feilet. Prøv igjen for filene som står igjen.`
+        `${failed} av ${fileQueue.length} filer feilet. ${
+          firstError ? `Første feil: ${firstError}. ` : ""
+        }Prøv igjen for filene som står igjen.`
       );
     } else {
       setProgress(0);

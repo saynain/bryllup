@@ -19,6 +19,7 @@ interface CreateUploadResponse {
   uploadHeaders?: Record<string, string>;
   uploadPartsUrl?: string;
   partSize?: number;
+  thumbnailUploadUrl?: string;
   abortUrl?: string;
   completeUrl?: string;
 }
@@ -133,19 +134,8 @@ async function uploadR2Multipart(
       });
     }
 
-    const completeResponse = await fetch(upload.completeUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...uploadRequestHeaders(),
-      },
-      body: JSON.stringify({ parts }),
-    });
-
-    if (!completeResponse.ok) {
-      const data = await completeResponse.json().catch(() => null);
-      throw new Error(data?.error || "Kunne ikke fullføre videoopplasting");
-    }
+    await completeR2Multipart(upload.completeUrl, parts);
+    await uploadR2VideoThumbnail(file, upload).catch(() => undefined);
   } catch (error) {
     if (upload.abortUrl) {
       await fetch(upload.abortUrl, {
@@ -180,6 +170,54 @@ async function uploadMultipartPart(
 
     return data;
   });
+}
+
+async function completeR2Multipart(
+  completeUrl: string,
+  parts: UploadedPart[]
+): Promise<void> {
+  await retryPart(async () => {
+    const completeResponse = await fetch(completeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...uploadRequestHeaders(),
+      },
+      body: JSON.stringify({ parts }),
+    });
+
+    if (!completeResponse.ok) {
+      const data = await completeResponse.json().catch(() => null);
+      throw new Error(data?.error || "Kunne ikke fullføre videoopplasting");
+    }
+  });
+}
+
+async function uploadR2VideoThumbnail(
+  file: File,
+  upload: CreateUploadResponse
+): Promise<void> {
+  if (upload.type !== "video" || !upload.thumbnailUploadUrl) {
+    return;
+  }
+
+  const thumbnail = await createVideoThumbnail(file);
+  if (!thumbnail) {
+    return;
+  }
+
+  const response = await fetch(upload.thumbnailUploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "image/jpeg",
+      ...uploadRequestHeaders(),
+    },
+    body: thumbnail,
+  });
+
+  if (!response.ok) {
+    throw new Error("Kunne ikke lage videominiatyr");
+  }
 }
 
 async function uploadToNextApi(file: File): Promise<void> {
@@ -317,6 +355,82 @@ function getTusChunkSize(): number {
     window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 768;
 
   return isMobile ? 8 * 1024 * 1024 : 24 * 1024 * 1024;
+}
+
+async function createVideoThumbnail(file: File): Promise<Blob | null> {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    let settled = false;
+    let timeoutId: number | undefined;
+
+    const cleanup = (thumbnail: Blob | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      URL.revokeObjectURL(objectUrl);
+      video.removeAttribute("src");
+      video.load();
+      resolve(thumbnail);
+    };
+
+    const capture = () => {
+      const sourceWidth = video.videoWidth;
+      const sourceHeight = video.videoHeight;
+
+      if (!sourceWidth || !sourceHeight) {
+        cleanup(null);
+        return;
+      }
+
+      const maxSize = 720;
+      const scale = Math.min(maxSize / sourceWidth, maxSize / sourceHeight, 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(sourceWidth * scale);
+      canvas.height = Math.round(sourceHeight * scale);
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        cleanup(null);
+        return;
+      }
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => cleanup(blob), "image/jpeg", 0.72);
+    };
+
+    timeoutId = window.setTimeout(() => cleanup(null), 7000);
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.addEventListener("error", () => cleanup(null), { once: true });
+    video.addEventListener(
+      "loadedmetadata",
+      () => {
+        const duration = Number.isFinite(video.duration) ? video.duration : 0;
+        const seekTo = Math.min(Math.max(duration * 0.1, 0.1), 1);
+
+        try {
+          video.currentTime = seekTo;
+        } catch {
+          capture();
+        }
+      },
+      { once: true }
+    );
+    video.addEventListener("seeked", capture, { once: true });
+    video.src = objectUrl;
+    video.load();
+  });
 }
 
 function uploadRequestHeaders(): Record<string, string> {

@@ -17,6 +17,7 @@ interface AppD1Database {
 interface AppR2Object {
   body: ReadableStream<Uint8Array> | null;
   httpEtag?: string;
+  size?: number;
 }
 
 interface AppR2UploadedPart {
@@ -153,7 +154,8 @@ const VIDEO_TYPES = new Set([
 
 const DEFAULT_MAX_IMAGE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_MAX_VIDEO_BYTES = 5 * 1024 * 1024 * 1024;
-const DEFAULT_R2_MULTIPART_PART_BYTES = 10 * 1024 * 1024;
+const DEFAULT_R2_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
+const MAX_VIDEO_THUMBNAIL_BYTES = 1_500_000;
 const DEFAULT_STREAM_BASIC_MAX_BYTES = 190 * 1024 * 1024;
 const DEFAULT_STREAM_MAX_DURATION_SECONDS = 60 * 60;
 
@@ -183,6 +185,11 @@ export default {
       const contentMatch = path.match(/^\/media\/([^/]+)\/content$/);
       if (request.method === "GET" && contentMatch) {
         return getR2Content(request, env, decodeURIComponent(contentMatch[1]));
+      }
+
+      const thumbnailMatch = path.match(/^\/media\/([^/]+)\/thumbnail$/);
+      if (request.method === "GET" && thumbnailMatch) {
+        return getR2Thumbnail(request, env, decodeURIComponent(thumbnailMatch[1]));
       }
 
       if (request.method === "POST" && path === "/uploads") {
@@ -218,6 +225,18 @@ export default {
           request,
           env,
           decodeURIComponent(r2MultipartCompleteMatch[1])
+        );
+      }
+
+      const r2MultipartThumbnailMatch = path.match(
+        /^\/uploads\/r2-multipart\/([^/]+)\/thumbnail$/
+      );
+      if (request.method === "PUT" && r2MultipartThumbnailMatch) {
+        requireUploadToken(request, env);
+        return uploadR2VideoThumbnail(
+          request,
+          env,
+          decodeURIComponent(r2MultipartThumbnailMatch[1])
         );
       }
 
@@ -836,6 +855,13 @@ async function createR2MultipartUpload(
       request,
       `/uploads/r2-multipart/${encodeURIComponent(id)}/complete`
     ),
+    thumbnailUploadUrl:
+      input.mediaType === "video"
+        ? absoluteUrl(
+            request,
+            `/uploads/r2-multipart/${encodeURIComponent(id)}/thumbnail`
+          )
+        : undefined,
     abortUrl: absoluteUrl(request, `/uploads/r2-multipart/${encodeURIComponent(id)}`),
   });
 }
@@ -919,6 +945,10 @@ async function completeR2MultipartUpload(
     return json(request, env, { error: "Upload target not found" }, 404);
   }
 
+  if (row.status === "ready") {
+    return json(request, env, toPublicMedia(row, request));
+  }
+
   const body = (await request.json()) as { parts?: AppR2UploadedPart[] };
   const parts = (body.parts || [])
     .filter(
@@ -947,6 +977,48 @@ async function completeR2MultipartUpload(
      WHERE id = ?`
   )
     .bind(now, now, id)
+    .run();
+
+  const updated = await findMedia(env, id);
+  return json(request, env, toPublicMedia(updated || row, request), 201);
+}
+
+async function uploadR2VideoThumbnail(
+  request: Request,
+  env: Env,
+  id: string
+): Promise<Response> {
+  const row = await findMedia(env, id);
+  if (!row || row.provider !== "r2-multipart" || row.media_type !== "video") {
+    return json(request, env, { error: "Video upload target not found" }, 404);
+  }
+
+  if (!request.body) {
+    return json(request, env, { error: "Missing request body" }, 400);
+  }
+
+  const contentLength = Number(request.headers.get("Content-Length") || 0);
+  if (contentLength > MAX_VIDEO_THUMBNAIL_BYTES) {
+    return json(request, env, { error: "Thumbnail exceeds upload limit" }, 413);
+  }
+
+  const thumbnailKey = videoThumbnailKey(id);
+  await env.MEDIA_BUCKET.put(thumbnailKey, request.body, {
+    httpMetadata: { contentType: "image/jpeg" },
+    customMetadata: {
+      mediaId: id,
+      source: "client-video-thumbnail",
+    },
+  });
+
+  const thumbnailUrl = absoluteUrl(request, `/media/${encodeURIComponent(id)}/thumbnail`);
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE media
+     SET thumbnail_url = ?, updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(thumbnailUrl, now, id)
     .run();
 
   const updated = await findMedia(env, id);
@@ -1058,6 +1130,30 @@ async function getR2Content(request: Request, env: Env, id: string): Promise<Res
   return new Response(object.body, { status: range ? 206 : 200, headers });
 }
 
+async function getR2Thumbnail(request: Request, env: Env, id: string): Promise<Response> {
+  const row = await findMedia(env, id);
+  if (!row || row.media_type !== "video" || !row.thumbnail_url) {
+    return json(request, env, { error: "Thumbnail not found" }, 404);
+  }
+
+  const object = await env.MEDIA_BUCKET.get(videoThumbnailKey(id));
+  if (!object || !object.body) {
+    return json(request, env, { error: "Thumbnail object not found" }, 404);
+  }
+
+  const headers = corsHeaders(request, env);
+  headers.set("Content-Type", "image/jpeg");
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  if (object.size) {
+    headers.set("Content-Length", String(object.size));
+  }
+  if (object.httpEtag) {
+    headers.set("ETag", object.httpEtag);
+  }
+
+  return new Response(object.body, { headers });
+}
+
 async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
   const now = new Date().toISOString();
   await env.DB.prepare(
@@ -1144,6 +1240,10 @@ function toPublicMedia(row: MediaRow, request: Request) {
 
 function isR2Provider(provider: string): boolean {
   return provider === "r2" || provider === "r2-multipart";
+}
+
+function videoThumbnailKey(id: string): string {
+  return `thumbnails/video/${id}.jpg`;
 }
 
 function parseRangeHeader(

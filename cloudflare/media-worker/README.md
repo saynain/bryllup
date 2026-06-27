@@ -9,8 +9,10 @@ site continues to run on Vercel.
 - Cloudflare Images hosted upload is used for photos through the Images binding.
 - R2 stores original files and is the fallback backend for large videos.
 - Video uploads use Cloudflare Stream when REST credentials are configured, with
-  R2 multipart as the fallback. Large speeches are uploaded in smaller retryable
+  R2 multipart as the fallback. Large speeches are uploaded in 5 MiB retryable
   parts instead of one long fragile request when R2 is used.
+- R2-backed videos can store a client-generated JPEG thumbnail next to the
+  original video object.
 - Optional REST credentials also enable Cloudflare Images Direct Creator Upload.
 
 ## Provisioning
