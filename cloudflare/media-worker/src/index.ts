@@ -1,7 +1,7 @@
 type MediaType = "image" | "video";
 type MediaStatus = "pending" | "processing" | "ready" | "error";
 type UploadMethod = "POST" | "PUT" | "PATCH";
-type UploadProtocol = "form" | "tus";
+type UploadProtocol = "form" | "tus" | "r2-multipart";
 
 interface AppD1PreparedStatement {
   bind(...values: unknown[]): AppD1PreparedStatement;
@@ -19,6 +19,22 @@ interface AppR2Object {
   httpEtag?: string;
 }
 
+interface AppR2UploadedPart {
+  etag: string;
+  partNumber: number;
+}
+
+interface AppR2MultipartUpload {
+  key: string;
+  uploadId: string;
+  uploadPart(
+    partNumber: number,
+    value: ReadableStream<Uint8Array> | ArrayBuffer | ArrayBufferView | Blob | string
+  ): Promise<AppR2UploadedPart>;
+  complete(uploadedParts: AppR2UploadedPart[]): Promise<{ key?: string; httpEtag?: string }>;
+  abort(): Promise<void>;
+}
+
 interface AppR2Bucket {
   put(
     key: string,
@@ -28,7 +44,20 @@ interface AppR2Bucket {
       customMetadata?: Record<string, string>;
     }
   ): Promise<unknown>;
-  get(key: string): Promise<AppR2Object | null>;
+  get(
+    key: string,
+    options?: {
+      range?: { offset?: number; length?: number; suffix?: number };
+    }
+  ): Promise<AppR2Object | null>;
+  createMultipartUpload(
+    key: string,
+    options?: {
+      httpMetadata?: { contentType?: string };
+      customMetadata?: Record<string, string>;
+    }
+  ): Promise<AppR2MultipartUpload>;
+  resumeMultipartUpload(key: string, uploadId: string): AppR2MultipartUpload;
 }
 
 interface StreamBinding {
@@ -71,9 +100,10 @@ interface Env {
   IMAGE_VARIANT_THUMB?: string;
   MAX_IMAGE_BYTES?: string;
   MAX_VIDEO_BYTES?: string;
+  R2_MULTIPART_PART_BYTES?: string;
   STREAM_BASIC_MAX_BYTES?: string;
   STREAM_MAX_DURATION_SECONDS?: string;
-  STREAM_UPLOAD_PROTOCOL?: "auto" | "form" | "tus";
+  STREAM_UPLOAD_PROTOCOL?: "auto" | "form" | "tus" | "r2-multipart";
   UPLOAD_TOKEN?: string;
 }
 
@@ -100,6 +130,7 @@ interface MediaRow {
 interface CreateUploadRequest {
   filename?: string;
   mimeType?: string;
+  mediaType?: MediaType;
   size?: number;
   uploadedBy?: string;
 }
@@ -120,8 +151,9 @@ const VIDEO_TYPES = new Set([
   "video/mpeg",
 ]);
 
-const DEFAULT_MAX_IMAGE_BYTES = 25 * 1024 * 1024;
-const DEFAULT_MAX_VIDEO_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_MAX_IMAGE_BYTES = 50 * 1024 * 1024;
+const DEFAULT_MAX_VIDEO_BYTES = 5 * 1024 * 1024 * 1024;
+const DEFAULT_R2_MULTIPART_PART_BYTES = 10 * 1024 * 1024;
 const DEFAULT_STREAM_BASIC_MAX_BYTES = 190 * 1024 * 1024;
 const DEFAULT_STREAM_MAX_DURATION_SECONDS = 60 * 60;
 
@@ -162,6 +194,43 @@ export default {
       if (request.method === "PUT" && r2UploadMatch) {
         requireUploadToken(request, env);
         return uploadR2Object(request, env, decodeURIComponent(r2UploadMatch[1]));
+      }
+
+      const r2MultipartPartMatch = path.match(
+        /^\/uploads\/r2-multipart\/([^/]+)\/parts\/(\d+)$/
+      );
+      if (request.method === "PUT" && r2MultipartPartMatch) {
+        requireUploadToken(request, env);
+        return uploadR2MultipartPart(
+          request,
+          env,
+          decodeURIComponent(r2MultipartPartMatch[1]),
+          Number(r2MultipartPartMatch[2])
+        );
+      }
+
+      const r2MultipartCompleteMatch = path.match(
+        /^\/uploads\/r2-multipart\/([^/]+)\/complete$/
+      );
+      if (request.method === "POST" && r2MultipartCompleteMatch) {
+        requireUploadToken(request, env);
+        return completeR2MultipartUpload(
+          request,
+          env,
+          decodeURIComponent(r2MultipartCompleteMatch[1])
+        );
+      }
+
+      const r2MultipartAbortMatch = path.match(
+        /^\/uploads\/r2-multipart\/([^/]+)$/
+      );
+      if (request.method === "DELETE" && r2MultipartAbortMatch) {
+        requireUploadToken(request, env);
+        return abortR2MultipartUpload(
+          request,
+          env,
+          decodeURIComponent(r2MultipartAbortMatch[1])
+        );
       }
 
       const imageUploadMatch = path.match(/^\/uploads\/images\/([^/]+)$/);
@@ -236,7 +305,9 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
     return json(request, env, { error: "Missing filename, mimeType or size" }, 400);
   }
 
-  const mediaType = detectMediaType(mimeType);
+  const requestedMediaType =
+    body.mediaType === "image" || body.mediaType === "video" ? body.mediaType : null;
+  const mediaType = detectMediaType(mimeType) || requestedMediaType;
   if (!mediaType) {
     return json(request, env, { error: "Unsupported file type" }, 400);
   }
@@ -282,17 +353,21 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
     });
   }
 
-  if (canUseStreamRest(env)) {
-    return createStreamRestUpload(request, env, {
-      filename,
-      originalName,
-      mimeType,
-      size,
-      uploadedBy,
-    });
+  if (canUseStreamRest(env) && env.STREAM_UPLOAD_PROTOCOL !== "r2-multipart") {
+    try {
+      return await createStreamRestUpload(request, env, {
+        filename,
+        originalName,
+        mimeType,
+        size,
+        uploadedBy,
+      });
+    } catch (error) {
+      console.warn("Falling back to R2 multipart video upload", error);
+    }
   }
 
-  if (env.STREAM) {
+  if (env.STREAM && env.STREAM_UPLOAD_PROTOCOL === "form") {
     return createStreamBindingUpload(request, env, {
       filename,
       originalName,
@@ -302,7 +377,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
     });
   }
 
-  return createR2Upload(request, env, {
+  return createR2MultipartUpload(request, env, {
     mediaType,
     filename,
     originalName,
@@ -713,6 +788,58 @@ async function createR2Upload(
   });
 }
 
+async function createR2MultipartUpload(
+  request: Request,
+  env: Env,
+  input: MediaInsertInput
+): Promise<Response> {
+  const id = `${input.mediaType === "image" ? "img" : "vid"}-${Date.now()}-${randomId()}`;
+  const objectKey = `uploads/${input.mediaType}/${id}-${input.filename}`;
+  const mediaUrl = absoluteUrl(request, `/media/${encodeURIComponent(id)}/content`);
+  const partSize = clamp(
+    parseInteger(env.R2_MULTIPART_PART_BYTES, DEFAULT_R2_MULTIPART_PART_BYTES),
+    5 * 1024 * 1024,
+    100 * 1024 * 1024
+  );
+  const upload = await env.MEDIA_BUCKET.createMultipartUpload(objectKey, {
+    httpMetadata: { contentType: input.mimeType },
+    customMetadata: {
+      originalName: input.originalName,
+      mediaId: id,
+    },
+  });
+
+  await insertMedia(env, {
+    ...input,
+    id,
+    provider: "r2-multipart",
+    status: "pending",
+    objectKey,
+    providerId: upload.uploadId,
+    url: mediaUrl,
+    thumbnailUrl: undefined,
+  });
+
+  return json(request, env, {
+    id,
+    type: input.mediaType,
+    provider: "r2-multipart",
+    uploadMethod: "PUT" satisfies UploadMethod,
+    uploadProtocol: "r2-multipart" satisfies UploadProtocol,
+    uploadId: upload.uploadId,
+    partSize,
+    uploadPartsUrl: absoluteUrl(
+      request,
+      `/uploads/r2-multipart/${encodeURIComponent(id)}/parts`
+    ),
+    completeUrl: absoluteUrl(
+      request,
+      `/uploads/r2-multipart/${encodeURIComponent(id)}/complete`
+    ),
+    abortUrl: absoluteUrl(request, `/uploads/r2-multipart/${encodeURIComponent(id)}`),
+  });
+}
+
 async function uploadR2Object(request: Request, env: Env, id: string): Promise<Response> {
   const row = await findMedia(env, id);
   if (!row || row.provider !== "r2" || !row.object_key) {
@@ -742,6 +869,124 @@ async function uploadR2Object(request: Request, env: Env, id: string): Promise<R
 
   const updated = await findMedia(env, id);
   return json(request, env, toPublicMedia(updated || row, request), 201);
+}
+
+async function uploadR2MultipartPart(
+  request: Request,
+  env: Env,
+  id: string,
+  partNumber: number
+): Promise<Response> {
+  const row = await findMedia(env, id);
+  if (
+    !row ||
+    row.provider !== "r2-multipart" ||
+    !row.object_key ||
+    !row.provider_id
+  ) {
+    return json(request, env, { error: "Upload target not found" }, 404);
+  }
+
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
+    return json(request, env, { error: "Invalid part number" }, 400);
+  }
+
+  if (!request.body) {
+    return json(request, env, { error: "Missing request body" }, 400);
+  }
+
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(
+    row.object_key,
+    row.provider_id
+  );
+  const part = await upload.uploadPart(partNumber, request.body);
+
+  return json(request, env, part);
+}
+
+async function completeR2MultipartUpload(
+  request: Request,
+  env: Env,
+  id: string
+): Promise<Response> {
+  const row = await findMedia(env, id);
+  if (
+    !row ||
+    row.provider !== "r2-multipart" ||
+    !row.object_key ||
+    !row.provider_id
+  ) {
+    return json(request, env, { error: "Upload target not found" }, 404);
+  }
+
+  const body = (await request.json()) as { parts?: AppR2UploadedPart[] };
+  const parts = (body.parts || [])
+    .filter(
+      (part) =>
+        Number.isInteger(part.partNumber) &&
+        part.partNumber > 0 &&
+        typeof part.etag === "string" &&
+        part.etag.length > 0
+    )
+    .sort((a, b) => a.partNumber - b.partNumber);
+
+  if (parts.length === 0) {
+    return json(request, env, { error: "Missing uploaded parts" }, 400);
+  }
+
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(
+    row.object_key,
+    row.provider_id
+  );
+  await upload.complete(parts);
+
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE media
+     SET status = 'ready', uploaded_at = ?, updated_at = ?, error = NULL
+     WHERE id = ?`
+  )
+    .bind(now, now, id)
+    .run();
+
+  const updated = await findMedia(env, id);
+  return json(request, env, toPublicMedia(updated || row, request), 201);
+}
+
+async function abortR2MultipartUpload(
+  request: Request,
+  env: Env,
+  id: string
+): Promise<Response> {
+  const row = await findMedia(env, id);
+  if (
+    !row ||
+    row.provider !== "r2-multipart" ||
+    !row.object_key ||
+    !row.provider_id
+  ) {
+    return json(request, env, { error: "Upload target not found" }, 404);
+  }
+
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(
+    row.object_key,
+    row.provider_id
+  );
+  await upload.abort();
+
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE media
+     SET status = 'error', error = 'Upload aborted', updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(now, id)
+    .run();
+
+  return new Response(null, {
+    status: 204,
+    headers: corsHeaders(request, env),
+  });
 }
 
 async function completeUpload(request: Request, env: Env, id: string): Promise<Response> {
@@ -777,11 +1022,22 @@ async function completeUpload(request: Request, env: Env, id: string): Promise<R
 
 async function getR2Content(request: Request, env: Env, id: string): Promise<Response> {
   const row = await findMedia(env, id);
-  if (!row || row.provider !== "r2" || !row.object_key) {
+  if (!row || !isR2Provider(row.provider) || !row.object_key) {
     return json(request, env, { error: "Media not found" }, 404);
   }
 
-  const object = await env.MEDIA_BUCKET.get(row.object_key);
+  const range = parseRangeHeader(request.headers.get("Range"), row.size);
+  const object = await env.MEDIA_BUCKET.get(
+    row.object_key,
+    range
+      ? {
+          range: {
+            offset: range.start,
+            length: range.end - range.start + 1,
+          },
+        }
+      : undefined
+  );
   if (!object || !object.body) {
     return json(request, env, { error: "Object not found" }, 404);
   }
@@ -790,11 +1046,16 @@ async function getR2Content(request: Request, env: Env, id: string): Promise<Res
   headers.set("Content-Type", row.mime_type);
   headers.set("Cache-Control", "public, max-age=31536000, immutable");
   headers.set("Content-Disposition", `inline; filename="${row.filename}"`);
+  headers.set("Accept-Ranges", "bytes");
+  headers.set("Content-Length", String(range ? range.end - range.start + 1 : row.size));
+  if (range) {
+    headers.set("Content-Range", `bytes ${range.start}-${range.end}/${row.size}`);
+  }
   if (object.httpEtag) {
     headers.set("ETag", object.httpEtag);
   }
 
-  return new Response(object.body, { headers });
+  return new Response(object.body, { status: range ? 206 : 200, headers });
 }
 
 async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
@@ -861,7 +1122,9 @@ async function fetchStreamStatus(
 
 function toPublicMedia(row: MediaRow, request: Request) {
   const r2Url =
-    row.provider === "r2" ? absoluteUrl(request, `/media/${encodeURIComponent(row.id)}/content`) : null;
+    isR2Provider(row.provider)
+      ? absoluteUrl(request, `/media/${encodeURIComponent(row.id)}/content`)
+      : null;
 
   return {
     id: row.id,
@@ -877,6 +1140,48 @@ function toPublicMedia(row: MediaRow, request: Request) {
     url: row.url || r2Url,
     thumbnailUrl: row.thumbnail_url || (row.media_type === "image" ? row.url || r2Url : undefined),
   };
+}
+
+function isR2Provider(provider: string): boolean {
+  return provider === "r2" || provider === "r2-multipart";
+}
+
+function parseRangeHeader(
+  header: string | null,
+  size: number
+): { start: number; end: number } | null {
+  if (!header || !header.startsWith("bytes=") || size <= 0) {
+    return null;
+  }
+
+  const [startRaw, endRaw] = header.replace("bytes=", "").split("-", 2);
+  if (!startRaw && !endRaw) {
+    return null;
+  }
+
+  if (!startRaw && endRaw) {
+    const suffix = Number.parseInt(endRaw, 10);
+    if (!Number.isFinite(suffix) || suffix <= 0) {
+      return null;
+    }
+    const start = Math.max(size - suffix, 0);
+    return { start, end: size - 1 };
+  }
+
+  const start = Number.parseInt(startRaw, 10);
+  const end = endRaw ? Number.parseInt(endRaw, 10) : size - 1;
+
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 0 ||
+    end < start ||
+    start >= size
+  ) {
+    return null;
+  }
+
+  return { start, end: Math.min(end, size - 1) };
 }
 
 function detectMediaType(mimeType: string): MediaType | null {
@@ -1024,12 +1329,15 @@ function corsHeaders(request: Request, env: Env): Headers {
   }
 
   headers.set("Vary", "Origin");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, HEAD, OPTIONS");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS");
   headers.set(
     "Access-Control-Allow-Headers",
     "Content-Type, X-Upload-Token, Tus-Resumable, Upload-Length, Upload-Metadata, Upload-Offset"
   );
-  headers.set("Access-Control-Expose-Headers", "Location, Upload-Offset");
+  headers.set(
+    "Access-Control-Expose-Headers",
+    "Location, Upload-Offset, Content-Length, Content-Range, Accept-Ranges"
+  );
   headers.set("Access-Control-Max-Age", "86400");
   return headers;
 }

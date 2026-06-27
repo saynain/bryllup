@@ -36,6 +36,10 @@ interface UploadItem {
 
 const MAX_PREVIEW_ITEMS = 18;
 const MAX_UPLOAD_RETRIES = 2;
+const MAX_FILES_PER_BATCH = 150;
+
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "m4v", "webm", "mpeg", "mpg"]);
 
 export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -45,11 +49,12 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const videoCameraInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback((newFiles: FileList | File[]) => {
     setError(null);
-    const supportedFiles = Array.from(newFiles).filter(
-      (file) => file.type.startsWith("image/") || file.type.startsWith("video/")
+    const supportedFiles = Array.from(newFiles).filter((file) =>
+      Boolean(getFileMediaType(file))
     );
 
     if (supportedFiles.length === 0) {
@@ -57,15 +62,28 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
       return;
     }
 
-    if (!isCloudflareMediaEnabled() && supportedFiles.some((file) => file.type.startsWith("video/"))) {
+    if (!isCloudflareMediaEnabled() && supportedFiles.some((file) => getFileMediaType(file) === "video")) {
       setError("Videoopplasting krever at Cloudflare media-API er aktivert");
       return;
     }
 
     setFiles((prev) => {
+      const capacity = Math.max(MAX_FILES_PER_BATCH - prev.length, 0);
+      if (capacity === 0) {
+        setError(`Maks ${MAX_FILES_PER_BATCH} filer per opplasting. Start en ny runde etterpå.`);
+        return prev;
+      }
+
       const previewSlots = Math.max(MAX_PREVIEW_ITEMS - prev.length, 0);
-      const nextItems = supportedFiles.map((file, index): UploadItem => {
-        const type = file.type.startsWith("video/") ? "video" : "image";
+      const acceptedFiles = supportedFiles.slice(0, capacity);
+      if (acceptedFiles.length < supportedFiles.length) {
+        setError(
+          `Tok med ${acceptedFiles.length} filer. Maks ${MAX_FILES_PER_BATCH} filer per opplasting.`
+        );
+      }
+
+      const nextItems = acceptedFiles.map((file, index): UploadItem => {
+        const type = getFileMediaType(file) || "image";
         const shouldPreview = index < previewSlots && type === "image";
 
         return {
@@ -237,6 +255,22 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
     return `${imageCount} ${imageCount === 1 ? "bilde" : "bilder"} valgt`;
   }, [files]);
 
+  const uploadSummary = useMemo(() => {
+    const done = files.filter((item) => item.status === "done").length;
+    const uploadingNow = files.filter((item) => item.status === "uploading").length;
+    const failedNow = files.filter((item) => item.status === "error").length;
+
+    if (!uploading && failedNow === 0) {
+      return null;
+    }
+
+    if (failedNow > 0 && !uploading) {
+      return `${failedNow} feilet`;
+    }
+
+    return `${done} av ${files.length} ferdig${uploadingNow > 0 ? " - laster opp" : ""}`;
+  }, [files, uploading]);
+
   const previewItems = files.slice(0, MAX_PREVIEW_ITEMS);
   const hiddenPreviewCount = Math.max(files.length - previewItems.length, 0);
 
@@ -271,6 +305,15 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
           className="hidden"
           disabled={uploading}
         />
+        <input
+          ref={videoCameraInputRef}
+          type="file"
+          accept="video/*"
+          capture="environment"
+          onChange={handleFileInput}
+          className="hidden"
+          disabled={uploading}
+        />
 
         <div className="flex flex-col items-center gap-4 text-center">
           <div className="p-4 rounded-full bg-[#E8DED0]">
@@ -284,7 +327,7 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
               eller velg bilder fra enheten din
             </p>
             <p className="text-xs text-[#9B8466] mt-2">
-              Bilder og videoer fra mobilen lastes opp i en mobilvennlig kø.
+              Opptil {MAX_FILES_PER_BATCH} bilder/videoer per runde. Store videoer lastes opp i deler.
             </p>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -296,7 +339,7 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
               className="h-12 px-6"
             >
               <ImageIcon className="h-5 w-5 mr-2" />
-              Velg bilder
+              Velg bilder/video
             </Button>
             <Button
               type="button"
@@ -307,6 +350,16 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
             >
               <Camera className="h-5 w-5 mr-2" />
               Ta bilde
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => videoCameraInputRef.current?.click()}
+              disabled={uploading}
+              className="h-12 px-6 sm:hidden"
+            >
+              <Film className="h-5 w-5 mr-2" />
+              Ta video
             </Button>
           </div>
         </div>
@@ -392,6 +445,7 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
           <Progress value={progress} />
           <p className="text-sm text-center text-[#8B7355]">
             Laster opp... {Math.round(progress)}%
+            {uploadSummary ? ` (${uploadSummary})` : ""}
           </p>
         </div>
       )}
@@ -452,4 +506,29 @@ function getUploadConcurrency(fileCount: number): number {
   }
 
   return fileCount > 20 ? 2 : 3;
+}
+
+function getFileMediaType(file: File): MediaType | null {
+  if (file.type.startsWith("image/")) {
+    return "image";
+  }
+
+  if (file.type.startsWith("video/")) {
+    return "video";
+  }
+
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  if (!extension) {
+    return null;
+  }
+
+  if (IMAGE_EXTENSIONS.has(extension)) {
+    return "image";
+  }
+
+  if (VIDEO_EXTENSIONS.has(extension)) {
+    return "video";
+  }
+
+  return null;
 }

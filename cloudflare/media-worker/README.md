@@ -7,10 +7,11 @@ site continues to run on Vercel.
 
 - D1 stores media metadata and gallery pagination state.
 - Cloudflare Images hosted upload is used for photos through the Images binding.
-- R2 stores original files when Images or Stream is not configured.
-- Cloudflare Stream direct upload is used for videos through the Stream binding.
-- Optional REST credentials can enable Cloudflare Images Direct Creator Upload
-  and TUS uploads for larger videos.
+- R2 stores original files and is the fallback backend for large videos.
+- Video uploads use Cloudflare Stream when REST credentials are configured, with
+  R2 multipart as the fallback. Large speeches are uploaded in smaller retryable
+  parts instead of one long fragile request when R2 is used.
+- Optional REST credentials also enable Cloudflare Images Direct Creator Upload.
 
 ## Provisioning
 
