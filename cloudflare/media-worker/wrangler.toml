@@ -21,7 +21,7 @@ binding = "IMAGES"
 
 [vars]
 # Comma-separated origins allowed to call this Worker from the browser.
-CORS_ORIGINS = "http://localhost:3000,https://bryllup.rylands.no"
+CORS_ORIGINS = "http://localhost:3000,https://test.bryllup.rylands.no,https://bryllup.rylands.no"
 
 # Cloudflare Images delivery base, for example:
 # https://imagedelivery.net/<account_hash>
