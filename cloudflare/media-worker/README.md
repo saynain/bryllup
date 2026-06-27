@@ -8,12 +8,17 @@ site continues to run on Vercel.
 - D1 stores media metadata and gallery pagination state.
 - Cloudflare Images hosted upload is used for photos through the Images binding.
 - R2 stores original files and is the fallback backend for large videos.
-- Video uploads use Cloudflare Stream when REST credentials are configured, with
-  R2 multipart as the fallback. Large speeches are uploaded in 5 MiB retryable
+- Video uploads use Cloudflare Stream when REST credentials or the Stream
+  binding can create a direct upload. R2 multipart is the fallback for larger
+  files and Stream failures. Large speeches are uploaded in 5 MiB retryable
   parts instead of one long fragile request when R2 is used.
 - R2-backed videos can store a client-generated JPEG thumbnail next to the
   original video object.
 - Optional REST credentials also enable Cloudflare Images Direct Creator Upload.
+
+The checked-in Worker config currently forces `STREAM_UPLOAD_PROTOCOL` to
+`r2-multipart` because the Cloudflare account has zero allocated Stream minutes.
+Switch it back to `auto` after Stream capacity is enabled.
 
 ## Provisioning
 

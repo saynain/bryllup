@@ -120,10 +120,17 @@ async function uploadR2Multipart(
       const start = (partNumber - 1) * partSize;
       const end = Math.min(start + partSize, file.size);
       const chunk = file.slice(start, end);
+      const uploadedBeforePart = uploadedBytes;
       const part = await uploadMultipartPart(
         `${upload.uploadPartsUrl}/${partNumber}`,
         chunk,
-        file.type || "application/octet-stream"
+        file.type || "application/octet-stream",
+        (loaded) => {
+          options.onProgress?.({
+            loaded: Math.min(uploadedBeforePart + loaded, file.size),
+            total: file.size,
+          });
+        }
       );
 
       parts.push(part);
@@ -150,25 +157,60 @@ async function uploadR2Multipart(
 async function uploadMultipartPart(
   url: string,
   chunk: Blob,
-  contentType: string
+  contentType: string,
+  onProgress?: (loaded: number) => void
 ): Promise<UploadedPart> {
   return retryPart(async () => {
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": contentType,
-        ...uploadRequestHeaders(),
-      },
-      body: chunk,
+    return uploadChunkWithXhr(url, chunk, contentType, onProgress);
+  });
+}
+
+function uploadChunkWithXhr(
+  url: string,
+  chunk: Blob,
+  contentType: string,
+  onProgress?: (loaded: number) => void
+): Promise<UploadedPart> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("PUT", url);
+    request.timeout = 180000;
+    request.setRequestHeader("Content-Type", contentType);
+
+    Object.entries(uploadRequestHeaders()).forEach(([key, value]) => {
+      request.setRequestHeader(key, value);
     });
 
-    const data = await response.json().catch(() => null);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress?.(event.loaded);
+      }
+    };
 
-    if (!response.ok) {
-      throw new Error(data?.error || "En videodel feilet");
-    }
+    request.onload = () => {
+      const data = parseJsonResponse(request.responseText);
+      if (request.status < 200 || request.status >= 300) {
+        reject(new Error(data?.error || "En videodel feilet"));
+        return;
+      }
 
-    return data;
+      const etag = data?.etag;
+      const partNumber = data?.partNumber;
+      if (typeof etag !== "string" || !Number.isInteger(partNumber)) {
+        reject(new Error("Serveren svarte uten gyldig videodel"));
+        return;
+      }
+
+      resolve({
+        etag,
+        partNumber: partNumber as number,
+      });
+    };
+
+    request.onerror = () => reject(new Error("Nettverket avbrøt en videodel"));
+    request.ontimeout = () => reject(new Error("En videodel brukte for lang tid"));
+    request.onabort = () => reject(new Error("Videoopplastingen ble avbrutt"));
+    request.send(chunk);
   });
 }
 
@@ -472,6 +514,14 @@ function fallbackMimeType(mediaType: MediaType | null): string {
   }
 
   return "application/octet-stream";
+}
+
+function parseJsonResponse(value: string): Partial<UploadedPart> & { error?: string } | null {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 async function retryPart<T>(operation: () => Promise<T>): Promise<T> {

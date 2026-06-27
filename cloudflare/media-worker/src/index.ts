@@ -386,14 +386,18 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
     }
   }
 
-  if (env.STREAM && env.STREAM_UPLOAD_PROTOCOL === "form") {
-    return createStreamBindingUpload(request, env, {
-      filename,
-      originalName,
-      mimeType,
-      size,
-      uploadedBy,
-    });
+  if (shouldUseStreamBindingUpload(env, size)) {
+    try {
+      return await createStreamBindingUpload(request, env, {
+        filename,
+        originalName,
+        mimeType,
+        size,
+        uploadedBy,
+      });
+    } catch (error) {
+      console.warn("Falling back to R2 multipart after Stream binding failed", error);
+    }
   }
 
   return createR2MultipartUpload(request, env, {
@@ -1316,6 +1320,22 @@ function canUseHostedImages(env: Env): boolean {
 
 function canUseStreamRest(env: Env): boolean {
   return Boolean(env.CLOUDFLARE_ACCOUNT_ID && env.CLOUDFLARE_API_TOKEN);
+}
+
+function shouldUseStreamBindingUpload(env: Env, size: number): boolean {
+  if (!env.STREAM || env.STREAM_UPLOAD_PROTOCOL === "r2-multipart") {
+    return false;
+  }
+
+  if (env.STREAM_UPLOAD_PROTOCOL === "form") {
+    return true;
+  }
+
+  const basicMaxBytes = parseInteger(
+    env.STREAM_BASIC_MAX_BYTES,
+    DEFAULT_STREAM_BASIC_MAX_BYTES
+  );
+  return size <= basicMaxBytes;
 }
 
 function pickHostedImageUrl(
