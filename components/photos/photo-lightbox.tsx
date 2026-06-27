@@ -23,6 +23,11 @@ export function PhotoLightbox({
   const currentIndex = photos.findIndex((p) => p.id === photo.id);
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < photos.length - 1;
+  const isVideo = photo.mediaType === "video";
+  const useStreamEmbed =
+    isVideo &&
+    (photo.url.includes("iframe.videodelivery.net") ||
+      photo.url.includes("cloudflarestream.com"));
 
   const handlePrev = useCallback(() => {
     if (hasPrev) {
@@ -124,7 +129,7 @@ export function PhotoLightbox({
           </Button>
         )}
 
-        {/* Image */}
+        {/* Media */}
         <motion.div
           key={photo.id}
           initial={{ opacity: 0, scale: 0.95 }}
@@ -134,14 +139,34 @@ export function PhotoLightbox({
           className="relative max-h-[90vh] max-w-[90vw]"
           onClick={(e) => e.stopPropagation()}
         >
-          <Image
-            src={photo.url}
-            alt={photo.uploadedBy ? `Bilde fra ${photo.uploadedBy}` : "Bryllupsbilde"}
-            width={1200}
-            height={800}
-            className="max-h-[90vh] max-w-[90vw] object-contain"
-            unoptimized
-          />
+          {isVideo ? (
+            useStreamEmbed ? (
+              <iframe
+                src={photo.url}
+                title={photo.uploadedBy ? `Video fra ${photo.uploadedBy}` : "Bryllupsvideo"}
+                className="aspect-video max-h-[90vh] w-[90vw] max-w-5xl rounded-lg bg-black"
+                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
+              />
+            ) : (
+              <video
+                src={photo.url}
+                poster={photo.thumbnailUrl}
+                controls
+                playsInline
+                className="max-h-[90vh] max-w-[90vw] rounded-lg bg-black"
+              />
+            )
+          ) : (
+            <Image
+              src={photo.url}
+              alt={photo.uploadedBy ? `Bilde fra ${photo.uploadedBy}` : "Bryllupsbilde"}
+              width={1200}
+              height={800}
+              className="max-h-[90vh] max-w-[90vw] object-contain"
+              unoptimized
+            />
+          )}
         </motion.div>
 
         {/* Photo info */}

@@ -7,7 +7,8 @@ import { PhotoCard } from "./photo-card";
 import { PhotoLightbox } from "./photo-lightbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import type { PhotoMetadata, ListResult } from "@/lib/storage/types";
+import { fetchMediaList } from "@/lib/media/client";
+import type { PhotoMetadata } from "@/lib/storage/types";
 
 interface PhotoGridProps {
   refreshTrigger?: number;
@@ -39,18 +40,10 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
       }
       setError(null);
 
-      const params = new URLSearchParams();
-      params.set("limit", "24");
-      if (loadMore && cursorOverride) {
-        params.set("cursor", cursorOverride);
-      }
-
-      const response = await fetch(`/api/photos?${params}`);
-      if (!response.ok) {
-        throw new Error("Kunne ikke hente bilder");
-      }
-
-      const data: ListResult = await response.json();
+      const data = await fetchMediaList({
+        limit: 24,
+        cursor: loadMore ? cursorOverride : undefined,
+      });
 
       setPhotos((prev) => (loadMore ? [...prev, ...data.photos] : data.photos));
       setCursor(data.nextCursor);
