@@ -236,9 +236,9 @@ export function PhotoLightbox({
           </motion.div>
         </div>
 
-        {/* Photo info */}
+        {/* Navigation controls */}
         <div
-          className="mt-2 shrink-0 space-y-2 text-center text-white sm:mt-4"
+          className="mt-2 shrink-0 text-white sm:mt-4"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-center gap-3">
@@ -265,14 +265,6 @@ export function PhotoLightbox({
               <ChevronRight className="h-5 w-5" />
             </Button>
           </div>
-          {photo.uploadedBy && (
-            <p className="text-sm opacity-80">Fra {photo.uploadedBy}</p>
-          )}
-          {photo.uploadMessage && (
-            <p className="mx-auto max-w-xl text-sm italic leading-relaxed text-white/80">
-              &ldquo;{photo.uploadMessage}&rdquo;
-            </p>
-          )}
         </div>
       </motion.div>
     </AnimatePresence>
