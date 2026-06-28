@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const uploadedBy = formData.get("uploadedBy") as string | null;
+    const uploadMessage = formData.get("uploadMessage") as string | null;
 
     if (!file) {
       return NextResponse.json(
@@ -74,6 +75,7 @@ export async function POST(request: NextRequest) {
       filename: file.name,
       mimeType: file.type,
       uploadedBy: uploadedBy || undefined,
+      uploadMessage: uploadMessage || undefined,
     });
 
     if (!result.success) {

@@ -20,6 +20,8 @@ import {
   isRetryableUploadError,
   uploadMediaFile,
 } from "@/lib/media/client";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface PhotoUploaderProps {
   onUploadComplete: () => void;
@@ -48,6 +50,8 @@ const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "m4v", "webm", "mpeg", "mpg"]);
 export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [files, setFiles] = useState<UploadItem[]>([]);
+  const [uploadedBy, setUploadedBy] = useState("");
+  const [uploadMessage, setUploadMessage] = useState("");
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -152,9 +156,14 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
   const uploadSingleFile = useCallback(
     async (item: UploadItem) => {
       updateFile(item.id, { status: "uploading", progress: 0, error: undefined });
+      const uploadDetails = {
+        uploadedBy: uploadedBy.trim() || undefined,
+        uploadMessage: uploadMessage.trim() || undefined,
+      };
 
       await retry(async () => {
         await uploadMediaFile(item.file, {
+          ...uploadDetails,
           onProgress: ({ loaded, total }) => {
             updateFile(item.id, {
               progress: total > 0 ? Math.round((loaded / total) * 100) : 0,
@@ -165,7 +174,7 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
 
       updateFile(item.id, { status: "done", progress: 100 });
     },
-    [updateFile]
+    [updateFile, uploadMessage, uploadedBy]
   );
 
   const handleUpload = async () => {
@@ -386,6 +395,39 @@ export function PhotoUploader({ onUploadComplete }: PhotoUploaderProps) {
             <p className="text-sm font-medium text-[#5D4E37]">
               {selectedSummary}
             </p>
+            <div className="grid gap-3 rounded-xl border border-[#E8DED0] bg-white/70 p-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="uploadedBy" className="text-[#5D4E37]">
+                  Navn
+                </Label>
+                <Input
+                  id="uploadedBy"
+                  value={uploadedBy}
+                  onChange={(event) => setUploadedBy(event.target.value.slice(0, 120))}
+                  placeholder="F.eks. Morten"
+                  disabled={uploading}
+                  autoComplete="name"
+                  className="h-11 bg-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="uploadMessage" className="text-[#5D4E37]">
+                  Hilsen
+                </Label>
+                <textarea
+                  id="uploadMessage"
+                  value={uploadMessage}
+                  onChange={(event) => setUploadMessage(event.target.value.slice(0, 500))}
+                  placeholder="Skriv en kort hilsen hvis du vil"
+                  disabled={uploading}
+                  rows={3}
+                  className="min-h-24 w-full resize-none rounded-md border-2 border-[#B8A491] bg-white px-3 py-2 text-base leading-relaxed transition-all duration-200 placeholder:text-[#9B8466]/75 focus-visible:border-[#8B7355] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+                />
+                <p className="text-right text-xs text-[#9B8466]">
+                  {uploadMessage.length}/500
+                </p>
+              </div>
+            </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
               {previewItems.map((item, index) => (
                 <motion.div

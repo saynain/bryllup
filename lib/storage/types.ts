@@ -11,6 +11,7 @@ export interface PhotoMetadata {
   takenAt?: Date | string;
   uploadedAt: Date | string;
   uploadedBy?: string;
+  uploadMessage?: string;
   url: string;
   thumbnailUrl?: string;
 }
@@ -21,6 +22,7 @@ export interface UploadInput {
   filename: string;
   mimeType: string;
   uploadedBy?: string;
+  uploadMessage?: string;
 }
 
 // Result of an upload operation
