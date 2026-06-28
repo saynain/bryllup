@@ -8,7 +8,8 @@ export interface PhotoMetadata {
   provider?: string;
   status?: "pending" | "processing" | "ready" | "error";
   size: number;
-  uploadedAt: Date;
+  takenAt?: Date | string;
+  uploadedAt: Date | string;
   uploadedBy?: string;
   url: string;
   thumbnailUrl?: string;
