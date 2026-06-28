@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef, type TouchEvent } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, ChevronLeft, ChevronRight, Download } from "lucide-react";
@@ -28,6 +28,8 @@ export function PhotoLightbox({
     isVideo &&
     (photo.url.includes("iframe.videodelivery.net") ||
       photo.url.includes("cloudflarestream.com"));
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const didSwipeRef = useRef(false);
 
   const handlePrev = useCallback(() => {
     if (hasPrev) {
@@ -51,6 +53,45 @@ export function PhotoLightbox({
     document.body.removeChild(link);
   }, [photo]);
 
+  const handleTouchStart = useCallback((event: TouchEvent) => {
+    if (isInteractiveSwipeTarget(event.target)) {
+      touchStartRef.current = null;
+      return;
+    }
+
+    const touch = event.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    didSwipeRef.current = false;
+  }, []);
+
+  const handleTouchEnd = useCallback(
+    (event: TouchEvent) => {
+      const start = touchStartRef.current;
+      touchStartRef.current = null;
+
+      if (!start || event.changedTouches.length === 0) {
+        return;
+      }
+
+      const touch = event.changedTouches[0];
+      const deltaX = touch.clientX - start.x;
+      const deltaY = touch.clientY - start.y;
+      const isHorizontalSwipe = Math.abs(deltaX) > 48 && Math.abs(deltaX) > Math.abs(deltaY) * 1.35;
+
+      if (!isHorizontalSwipe) {
+        return;
+      }
+
+      didSwipeRef.current = true;
+      if (deltaX > 0) {
+        handlePrev();
+      } else {
+        handleNext();
+      }
+    },
+    [handlePrev, handleNext]
+  );
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -73,38 +114,57 @@ export function PhotoLightbox({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/90"
-        onClick={onClose}
+        className="fixed inset-0 z-50 flex flex-col bg-black/90 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6 sm:pb-6 sm:pt-5"
+        onClick={() => {
+          if (didSwipeRef.current) {
+            didSwipeRef.current = false;
+            return;
+          }
+          onClose();
+        }}
       >
-        {/* Close button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-4 right-4 z-10 text-white hover:bg-white/20"
-          onClick={onClose}
+        <div
+          className="relative z-20 mb-2 flex h-11 shrink-0 items-center justify-between gap-3 text-white sm:mb-4"
+          onClick={(e) => e.stopPropagation()}
         >
-          <X className="h-6 w-6" />
-        </Button>
-
-        {/* Download button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-4 right-16 z-10 text-white hover:bg-white/20"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDownload();
-          }}
-        >
-          <Download className="h-5 w-5" />
-        </Button>
+          <div className="min-w-0 text-xs text-white/70">
+            {currentIndex + 1} av {photos.length}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Last ned"
+              className="h-11 w-11 rounded-full bg-black/45 text-white shadow-sm ring-1 ring-white/15 hover:bg-white/20"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownload();
+              }}
+            >
+              <Download className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Lukk"
+              className="h-11 w-11 rounded-full bg-black/45 text-white shadow-sm ring-1 ring-white/15 hover:bg-white/20"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
+            >
+              <X className="h-6 w-6" />
+            </Button>
+          </div>
+        </div>
 
         {/* Previous button */}
         {hasPrev && (
           <Button
             variant="ghost"
             size="icon"
-            className="absolute left-4 z-10 text-white hover:bg-white/20 h-12 w-12"
+            aria-label="Forrige"
+            className="absolute left-2 top-1/2 z-20 hidden h-12 w-12 -translate-y-1/2 rounded-full bg-black/35 text-white shadow-sm ring-1 ring-white/10 hover:bg-white/20 sm:inline-flex"
             onClick={(e) => {
               e.stopPropagation();
               handlePrev();
@@ -119,7 +179,8 @@ export function PhotoLightbox({
           <Button
             variant="ghost"
             size="icon"
-            className="absolute right-4 z-10 text-white hover:bg-white/20 h-12 w-12"
+            aria-label="Neste"
+            className="absolute right-2 top-1/2 z-20 hidden h-12 w-12 -translate-y-1/2 rounded-full bg-black/35 text-white shadow-sm ring-1 ring-white/10 hover:bg-white/20 sm:inline-flex"
             onClick={(e) => {
               e.stopPropagation();
               handleNext();
@@ -129,56 +190,67 @@ export function PhotoLightbox({
           </Button>
         )}
 
-        {/* Media */}
-        <motion.div
-          key={photo.id}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.2 }}
-          className="relative max-h-[90vh] max-w-[90vw]"
-          onClick={(e) => e.stopPropagation()}
+        <div
+          className="relative flex min-h-0 flex-1 items-center justify-center"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
         >
-          {isVideo ? (
-            useStreamEmbed ? (
-              <iframe
-                src={photo.url}
-                title={photo.uploadedBy ? `Video fra ${photo.uploadedBy}` : "Bryllupsvideo"}
-                className="aspect-video max-h-[90vh] w-[90vw] max-w-5xl rounded-lg bg-black"
-                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-              />
+          {/* Media */}
+          <motion.div
+            key={photo.id}
+            initial={{ opacity: 0, scale: 0.98, x: 12 }}
+            animate={{ opacity: 1, scale: 1, x: 0 }}
+            exit={{ opacity: 0, scale: 0.98, x: -12 }}
+            transition={{ duration: 0.18 }}
+            className="relative flex max-h-full max-w-full items-center justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {isVideo ? (
+              useStreamEmbed ? (
+                <iframe
+                  src={photo.url}
+                  title={photo.uploadedBy ? `Video fra ${photo.uploadedBy}` : "Bryllupsvideo"}
+                  className="aspect-video max-h-[calc(100dvh-8rem)] w-[94vw] max-w-5xl rounded-md bg-black sm:max-h-[calc(100dvh-9rem)]"
+                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                  allowFullScreen
+                />
+              ) : (
+                <video
+                  src={photo.url}
+                  poster={photo.thumbnailUrl}
+                  controls
+                  playsInline
+                  className="max-h-[calc(100dvh-8rem)] max-w-[94vw] rounded-md bg-black sm:max-h-[calc(100dvh-9rem)]"
+                />
+              )
             ) : (
-              <video
+              <Image
                 src={photo.url}
-                poster={photo.thumbnailUrl}
-                controls
-                playsInline
-                className="max-h-[90vh] max-w-[90vw] rounded-lg bg-black"
+                alt={photo.uploadedBy ? `Bilde fra ${photo.uploadedBy}` : "Bryllupsbilde"}
+                width={1200}
+                height={800}
+                className="max-h-[calc(100dvh-8rem)] max-w-[94vw] object-contain sm:max-h-[calc(100dvh-9rem)]"
+                unoptimized
+                priority
               />
-            )
-          ) : (
-            <Image
-              src={photo.url}
-              alt={photo.uploadedBy ? `Bilde fra ${photo.uploadedBy}` : "Bryllupsbilde"}
-              width={1200}
-              height={800}
-              className="max-h-[90vh] max-w-[90vw] object-contain"
-              unoptimized
-            />
-          )}
-        </motion.div>
+            )}
+          </motion.div>
+        </div>
 
         {/* Photo info */}
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-center text-white">
+        <div
+          className="mt-2 shrink-0 text-center text-white sm:mt-4"
+          onClick={(e) => e.stopPropagation()}
+        >
           {photo.uploadedBy && (
             <p className="text-sm opacity-80">Fra {photo.uploadedBy}</p>
           )}
-          <p className="text-xs opacity-60">
-            {currentIndex + 1} av {photos.length}
-          </p>
         </div>
       </motion.div>
     </AnimatePresence>
   );
+}
+
+function isInteractiveSwipeTarget(target: EventTarget): boolean {
+  return target instanceof Element && Boolean(target.closest("button, a, video, iframe"));
 }
