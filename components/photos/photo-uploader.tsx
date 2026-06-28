@@ -15,7 +15,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { isCloudflareMediaEnabled, uploadMediaFile } from "@/lib/media/client";
+import {
+  isCloudflareMediaEnabled,
+  isRetryableUploadError,
+  uploadMediaFile,
+} from "@/lib/media/client";
 
 interface PhotoUploaderProps {
   onUploadComplete: () => void;
@@ -491,6 +495,9 @@ async function retry(operation: () => Promise<void>): Promise<void> {
       return;
     } catch (error) {
       lastError = error;
+      if (!isRetryableUploadError(error) || attempt === MAX_UPLOAD_RETRIES) {
+        break;
+      }
       await wait(700 * (attempt + 1));
     }
   }

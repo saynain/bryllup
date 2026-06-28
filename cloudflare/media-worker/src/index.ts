@@ -2,6 +2,13 @@ type MediaType = "image" | "video";
 type MediaStatus = "pending" | "processing" | "ready" | "error";
 type UploadMethod = "POST" | "PUT" | "PATCH";
 type UploadProtocol = "form" | "tus" | "r2-multipart";
+type ImageUploadProvider =
+  | "auto"
+  | "r2"
+  | "cloudflare-images"
+  | "cloudflare-images-hosted"
+  | "images"
+  | "images-hosted";
 
 interface AppD1PreparedStatement {
   bind(...values: unknown[]): AppD1PreparedStatement;
@@ -99,6 +106,7 @@ interface Env {
   IMAGE_DELIVERY_BASE_URL?: string;
   IMAGE_VARIANT_PUBLIC?: string;
   IMAGE_VARIANT_THUMB?: string;
+  IMAGE_UPLOAD_PROVIDER?: ImageUploadProvider;
   MAX_IMAGE_BYTES?: string;
   MAX_VIDEO_BYTES?: string;
   R2_MULTIPART_PART_BYTES?: string;
@@ -341,6 +349,48 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
   }
 
   if (mediaType === "image") {
+    const imageProvider = imageUploadProvider(env);
+
+    if (imageProvider === "r2") {
+      return createR2Upload(request, env, {
+        mediaType,
+        filename,
+        originalName,
+        mimeType,
+        size,
+        uploadedBy,
+      });
+    }
+
+    if (imageProvider === "cloudflare-images") {
+      if (!canUseCloudflareImages(env)) {
+        return json(request, env, { error: "Cloudflare Images upload is not configured" }, 500);
+      }
+
+      return createImageDirectUpload(request, env, {
+        filename,
+        originalName,
+        mimeType,
+        size,
+        uploadedBy,
+      });
+    }
+
+    if (imageProvider === "cloudflare-images-hosted") {
+      if (!canUseHostedImages(env)) {
+        return json(request, env, { error: "Cloudflare Images binding is not configured" }, 500);
+      }
+
+      return createHostedImageUpload(request, env, {
+        mediaType,
+        filename,
+        originalName,
+        mimeType,
+        size,
+        uploadedBy,
+      });
+    }
+
     if (canUseCloudflareImages(env)) {
       return createImageDirectUpload(request, env, {
         filename,
@@ -1330,6 +1380,26 @@ function canUseCloudflareImages(env: Env): boolean {
 
 function canUseHostedImages(env: Env): boolean {
   return Boolean(env.IMAGES?.hosted);
+}
+
+function imageUploadProvider(
+  env: Env
+): "auto" | "r2" | "cloudflare-images" | "cloudflare-images-hosted" {
+  const provider = env.IMAGE_UPLOAD_PROVIDER?.trim().toLowerCase();
+
+  if (provider === "r2") {
+    return "r2";
+  }
+
+  if (provider === "cloudflare-images" || provider === "images") {
+    return "cloudflare-images";
+  }
+
+  if (provider === "cloudflare-images-hosted" || provider === "images-hosted") {
+    return "cloudflare-images-hosted";
+  }
+
+  return "auto";
 }
 
 function canUseStreamRest(env: Env): boolean {
