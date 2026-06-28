@@ -319,6 +319,7 @@ async function createCloudflareUpload(file: File): Promise<CreateUploadResponse>
       mimeType: file.type || fallbackMimeType(mediaType),
       mediaType,
       size: file.size,
+      takenAt: fileTakenAt(file),
     }),
   });
 
@@ -693,6 +694,14 @@ function fallbackMimeType(mediaType: MediaType | null): string {
   }
 
   return "application/octet-stream";
+}
+
+function fileTakenAt(file: File): string | undefined {
+  if (!Number.isFinite(file.lastModified) || file.lastModified <= 0) {
+    return undefined;
+  }
+
+  return new Date(file.lastModified).toISOString();
 }
 
 function parseJsonResponse(value: string): Partial<UploadedPart> & { error?: string } | null {

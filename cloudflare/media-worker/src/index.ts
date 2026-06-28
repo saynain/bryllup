@@ -10,6 +10,12 @@ type ImageUploadProvider =
   | "images"
   | "images-hosted";
 
+interface MediaCursor {
+  sortAt: string;
+  createdAt: string;
+  id: string;
+}
+
 interface AppD1PreparedStatement {
   bind(...values: unknown[]): AppD1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
@@ -130,10 +136,12 @@ interface MediaRow {
   provider_id: string | null;
   url: string | null;
   thumbnail_url: string | null;
+  taken_at: string | null;
   created_at: string;
   uploaded_at: string | null;
   updated_at: string;
   error: string | null;
+  sort_at?: string;
 }
 
 interface CreateUploadRequest {
@@ -142,6 +150,7 @@ interface CreateUploadRequest {
   mediaType?: MediaType;
   size?: number;
   uploadedBy?: string;
+  takenAt?: string;
 }
 
 const IMAGE_TYPES = new Set([
@@ -284,19 +293,33 @@ export default {
 async function listMedia(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const limit = clamp(parseInteger(url.searchParams.get("limit"), 24), 1, 100);
-  const cursor = url.searchParams.get("cursor");
+  const cursor = parseMediaCursor(url.searchParams.get("cursor"));
+  const sortExpression = "COALESCE(taken_at, uploaded_at, created_at)";
 
   const statement = cursor
     ? env.DB.prepare(
-        `SELECT * FROM media
-         WHERE status IN ('ready', 'processing') AND created_at < ?
-         ORDER BY created_at DESC
-         LIMIT ?`
-      ).bind(cursor, limit + 1)
-    : env.DB.prepare(
-        `SELECT * FROM media
+        `SELECT *, ${sortExpression} AS sort_at FROM media
          WHERE status IN ('ready', 'processing')
-         ORDER BY created_at DESC
+           AND (
+             ${sortExpression} > ?
+             OR (${sortExpression} = ? AND created_at > ?)
+             OR (${sortExpression} = ? AND created_at = ? AND id > ?)
+           )
+         ORDER BY ${sortExpression} ASC, created_at ASC, id ASC
+         LIMIT ?`
+      ).bind(
+        cursor.sortAt,
+        cursor.sortAt,
+        cursor.createdAt,
+        cursor.sortAt,
+        cursor.createdAt,
+        cursor.id,
+        limit + 1
+      )
+    : env.DB.prepare(
+        `SELECT *, ${sortExpression} AS sort_at FROM media
+         WHERE status IN ('ready', 'processing')
+         ORDER BY ${sortExpression} ASC, created_at ASC, id ASC
          LIMIT ?`
       ).bind(limit + 1);
 
@@ -306,7 +329,7 @@ async function listMedia(request: Request, env: Env): Promise<Response> {
 
   return json(request, env, {
     photos: page.map((row) => toPublicMedia(row, request)),
-    nextCursor: hasMore ? page[page.length - 1]?.created_at : undefined,
+    nextCursor: hasMore ? encodeMediaCursor(page[page.length - 1]) : undefined,
     hasMore,
   });
 }
@@ -327,6 +350,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
   const mimeType = (body.mimeType || "").toLowerCase();
   const size = Number(body.size || 0);
   const uploadedBy = body.uploadedBy?.slice(0, 120) || null;
+  const takenAt = parseOptionalIsoDate(body.takenAt);
 
   if (!filename || !mimeType || !Number.isFinite(size) || size <= 0) {
     return json(request, env, { error: "Missing filename, mimeType or size" }, 400);
@@ -359,6 +383,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        takenAt,
       });
     }
 
@@ -373,6 +398,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        takenAt,
       });
     }
 
@@ -388,6 +414,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        takenAt,
       });
     }
 
@@ -398,6 +425,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        takenAt,
       });
     }
 
@@ -409,6 +437,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        takenAt,
       });
     }
 
@@ -419,6 +448,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
       mimeType,
       size,
       uploadedBy,
+      takenAt,
     });
   }
 
@@ -430,6 +460,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        takenAt,
       });
     } catch (error) {
       console.warn("Falling back to R2 multipart video upload", error);
@@ -444,6 +475,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        takenAt,
       });
     } catch (error) {
       console.warn("Falling back to R2 multipart after Stream binding failed", error);
@@ -457,6 +489,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
     mimeType,
     size,
     uploadedBy,
+    takenAt,
   });
 }
 
@@ -835,6 +868,7 @@ interface MediaInsertInput {
   mimeType: string;
   size: number;
   uploadedBy: string | null;
+  takenAt?: string | null;
   objectKey?: string;
   providerId?: string;
   url?: string;
@@ -1227,8 +1261,8 @@ async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO media (
       id, provider, media_type, status, filename, original_name, mime_type, size,
-      uploaded_by, object_key, provider_id, url, thumbnail_url, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      uploaded_by, object_key, provider_id, url, thumbnail_url, taken_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       input.id,
@@ -1244,6 +1278,7 @@ async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
       input.providerId || null,
       input.url || null,
       input.thumbnailUrl || null,
+      input.takenAt || null,
       now,
       now
     )
@@ -1299,6 +1334,7 @@ function toPublicMedia(row: MediaRow, request: Request) {
     provider: row.provider,
     status: row.status,
     size: row.size,
+    takenAt: row.taken_at || undefined,
     uploadedAt: row.uploaded_at || row.created_at,
     uploadedBy: row.uploaded_by || undefined,
     url: row.url || r2Url,
@@ -1493,6 +1529,41 @@ function absoluteUrl(request: Request, path: string): string {
 
 function trimTrailingSlash(pathname: string): string {
   return pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
+}
+
+function parseOptionalIsoDate(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return null;
+  }
+
+  return date.toISOString();
+}
+
+function encodeMediaCursor(row: MediaRow | undefined): string | undefined {
+  if (!row) {
+    return undefined;
+  }
+
+  const sortAt = row.sort_at || row.taken_at || row.uploaded_at || row.created_at;
+  return `${sortAt}|${row.created_at}|${row.id}`;
+}
+
+function parseMediaCursor(value: string | null): MediaCursor | null {
+  if (!value) {
+    return null;
+  }
+
+  const [sortAt, createdAt, id] = value.split("|", 3);
+  if (!sortAt || !createdAt || !id) {
+    return null;
+  }
+
+  return { sortAt, createdAt, id };
 }
 
 function parseInteger(value: string | null | undefined, fallback: number): number {

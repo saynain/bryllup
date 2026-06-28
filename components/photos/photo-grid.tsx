@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { fetchMediaList } from "@/lib/media/client";
 import type { PhotoMetadata } from "@/lib/storage/types";
 
+const GALLERY_PAGE_SIZE = 100;
+
 interface PhotoGridProps {
   refreshTrigger?: number;
 }
@@ -41,7 +43,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
       setError(null);
 
       const data = await fetchMediaList({
-        limit: 24,
+        limit: GALLERY_PAGE_SIZE,
         cursor: loadMore ? cursorOverride : undefined,
       });
 
@@ -64,11 +66,11 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
 
   if (loading) {
     return (
-      <div className="columns-2 md:columns-3 lg:columns-4 gap-4">
-        {Array.from({ length: 8 }).map((_, i) => (
+      <div className="grid grid-cols-4 gap-0.5 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
+        {Array.from({ length: 40 }).map((_, i) => (
           <Skeleton
             key={i}
-            className="mb-4 aspect-square rounded-lg"
+            className="aspect-square rounded-none"
           />
         ))}
       </div>
@@ -110,7 +112,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   return (
     <>
       {/* Photo grid */}
-      <div className="columns-2 md:columns-3 lg:columns-4 gap-4">
+      <div className="grid grid-cols-4 gap-0.5 overflow-hidden rounded-md sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
         {photos.map((photo) => (
           <PhotoCard
             key={photo.id}
