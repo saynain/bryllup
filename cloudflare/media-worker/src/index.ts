@@ -16,6 +16,10 @@ interface MediaCursor {
   id: string;
 }
 
+interface AppExecutionContext {
+  waitUntil(promise: Promise<unknown>): void;
+}
+
 interface AppD1PreparedStatement {
   bind(...values: unknown[]): AppD1PreparedStatement;
   first<T = unknown>(): Promise<T | null>;
@@ -175,9 +179,15 @@ const DEFAULT_R2_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_THUMBNAIL_BYTES = 1_500_000;
 const DEFAULT_STREAM_BASIC_MAX_BYTES = 190 * 1024 * 1024;
 const DEFAULT_STREAM_MAX_DURATION_SECONDS = 60 * 60;
+const IMMUTABLE_MEDIA_CACHE_CONTROL =
+  "public, max-age=31536000, s-maxage=31536000, immutable";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx?: AppExecutionContext
+  ): Promise<Response> {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: corsHeaders(request, env) });
     }
@@ -201,12 +211,12 @@ export default {
 
       const contentMatch = path.match(/^\/media\/([^/]+)\/content$/);
       if (request.method === "GET" && contentMatch) {
-        return getR2Content(request, env, decodeURIComponent(contentMatch[1]));
+        return getR2Content(request, env, decodeURIComponent(contentMatch[1]), ctx);
       }
 
       const thumbnailMatch = path.match(/^\/media\/([^/]+)\/thumbnail$/);
       if (request.method === "GET" && thumbnailMatch) {
-        return getR2Thumbnail(request, env, decodeURIComponent(thumbnailMatch[1]));
+        return getR2Thumbnail(request, env, decodeURIComponent(thumbnailMatch[1]), ctx);
       }
 
       if (request.method === "POST" && path === "/uploads") {
@@ -1194,13 +1204,26 @@ async function completeUpload(request: Request, env: Env, id: string): Promise<R
   return json(request, env, toPublicMedia(updated || row, request));
 }
 
-async function getR2Content(request: Request, env: Env, id: string): Promise<Response> {
+async function getR2Content(
+  request: Request,
+  env: Env,
+  id: string,
+  ctx?: AppExecutionContext
+): Promise<Response> {
   const row = await findMedia(env, id);
   if (!row || !isR2Provider(row.provider) || !row.object_key) {
     return json(request, env, { error: "Media not found" }, 404);
   }
 
   const range = parseRangeHeader(request.headers.get("Range"), row.size);
+  const shouldCacheWholeImage = row.media_type === "image" && !range;
+  if (shouldCacheWholeImage) {
+    const cached = await matchImmutableMediaCache(request);
+    if (cached) {
+      return cached;
+    }
+  }
+
   const object = await env.MEDIA_BUCKET.get(
     row.object_key,
     range
@@ -1216,9 +1239,14 @@ async function getR2Content(request: Request, env: Env, id: string): Promise<Res
     return json(request, env, { error: "Object not found" }, 404);
   }
 
-  const headers = corsHeaders(request, env);
+  const headers = shouldCacheWholeImage
+    ? cacheableMediaHeaders(request, env)
+    : corsHeaders(request, env);
   headers.set("Content-Type", row.mime_type);
-  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  headers.set("Cache-Control", IMMUTABLE_MEDIA_CACHE_CONTROL);
+  if (shouldCacheWholeImage) {
+    headers.set("X-Bryllup-Cache", "MISS");
+  }
   headers.set("Content-Disposition", `inline; filename="${row.filename}"`);
   headers.set("Accept-Ranges", "bytes");
   headers.set("Content-Length", String(range ? range.end - range.start + 1 : row.size));
@@ -1229,13 +1257,28 @@ async function getR2Content(request: Request, env: Env, id: string): Promise<Res
     headers.set("ETag", object.httpEtag);
   }
 
-  return new Response(object.body, { status: range ? 206 : 200, headers });
+  const response = new Response(object.body, { status: range ? 206 : 200, headers });
+  if (shouldCacheWholeImage) {
+    cacheImmutableMediaResponse(request, response, ctx);
+  }
+
+  return response;
 }
 
-async function getR2Thumbnail(request: Request, env: Env, id: string): Promise<Response> {
+async function getR2Thumbnail(
+  request: Request,
+  env: Env,
+  id: string,
+  ctx?: AppExecutionContext
+): Promise<Response> {
   const row = await findMedia(env, id);
   if (!row || row.media_type !== "video" || !row.thumbnail_url) {
     return json(request, env, { error: "Thumbnail not found" }, 404);
+  }
+
+  const cached = await matchImmutableMediaCache(request);
+  if (cached) {
+    return cached;
   }
 
   const object = await env.MEDIA_BUCKET.get(videoThumbnailKey(id));
@@ -1243,9 +1286,10 @@ async function getR2Thumbnail(request: Request, env: Env, id: string): Promise<R
     return json(request, env, { error: "Thumbnail object not found" }, 404);
   }
 
-  const headers = corsHeaders(request, env);
+  const headers = cacheableMediaHeaders(request, env);
   headers.set("Content-Type", "image/jpeg");
-  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  headers.set("Cache-Control", IMMUTABLE_MEDIA_CACHE_CONTROL);
+  headers.set("X-Bryllup-Cache", "MISS");
   if (object.size) {
     headers.set("Content-Length", String(object.size));
   }
@@ -1253,7 +1297,9 @@ async function getR2Thumbnail(request: Request, env: Env, id: string): Promise<R
     headers.set("ETag", object.httpEtag);
   }
 
-  return new Response(object.body, { headers });
+  const response = new Response(object.body, { headers });
+  cacheImmutableMediaResponse(request, response, ctx);
+  return response;
 }
 
 async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
@@ -1615,6 +1661,55 @@ function corsHeaders(request: Request, env: Env): Headers {
   );
   headers.set("Access-Control-Max-Age", "86400");
   return headers;
+}
+
+function cacheableMediaHeaders(request: Request, env: Env): Headers {
+  const headers = corsHeaders(request, env);
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.delete("Vary");
+  return headers;
+}
+
+async function matchImmutableMediaCache(request: Request): Promise<Response | null> {
+  const cache = immutableMediaCache();
+  const cached = await cache.match(immutableMediaCacheKey(request));
+  if (!cached) {
+    return null;
+  }
+
+  const headers = new Headers(cached.headers);
+  headers.set("X-Bryllup-Cache", "HIT");
+  return new Response(cached.body, {
+    status: cached.status,
+    statusText: cached.statusText,
+    headers,
+  });
+}
+
+function cacheImmutableMediaResponse(
+  request: Request,
+  response: Response,
+  ctx?: AppExecutionContext
+): void {
+  if (response.status < 200 || response.status >= 300) {
+    return;
+  }
+
+  const cache = immutableMediaCache();
+  const put = cache
+    .put(immutableMediaCacheKey(request), response.clone())
+    .catch((error) => console.warn("Could not cache media response", error));
+  if (ctx) {
+    ctx.waitUntil(put);
+  }
+}
+
+function immutableMediaCache(): Cache {
+  return (caches as CacheStorage & { default: Cache }).default;
+}
+
+function immutableMediaCacheKey(request: Request): Request {
+  return new Request(request.url, { method: "GET" });
 }
 
 function json(
