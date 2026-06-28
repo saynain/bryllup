@@ -157,7 +157,7 @@ export function WishlistSection() {
               </div>
 
               <p className="mt-4 text-lg md:text-xl font-light leading-relaxed">
-                Dersom noen heller ønsker å gi en fysisk gave, har vi også laget
+                Dersom noen ønsker å gi en fysisk gave, har vi også laget
                 en liten ønskeliste som dere finner her.
               </p>
 
