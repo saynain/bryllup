@@ -71,9 +71,7 @@ export class GoogleDriveStorage implements StorageProvider {
         requestBody: {
           name: fileName,
           parents: [this.folderId],
-          description: input.uploadedBy
-            ? `Uploaded by: ${input.uploadedBy}`
-            : undefined,
+          description: serializeUploadDescription(input.uploadedBy, input.uploadMessage),
         },
         media: {
           mimeType: input.mimeType,
@@ -101,6 +99,7 @@ export class GoogleDriveStorage implements StorageProvider {
         size: parseInt(file.size || "0"),
         uploadedAt: new Date(file.createdTime!),
         uploadedBy: input.uploadedBy,
+        uploadMessage: input.uploadMessage,
         url: `https://drive.google.com/uc?export=view&id=${file.id}`,
         thumbnailUrl:
           file.thumbnailLink ||
@@ -131,9 +130,8 @@ export class GoogleDriveStorage implements StorageProvider {
       const photos: PhotoMetadata[] = (response.data.files || []).map(
         (file) => {
           // Extract uploadedBy from description if present
-          const uploadedByMatch = file.description?.match(
-            /Uploaded by: (.+)/
-          );
+          const uploadedByMatch = file.description?.match(/Uploaded by: ([^\n]+)/);
+          const uploadMessageMatch = file.description?.match(/Message: ([\s\S]+)/);
           return {
             id: file.id!,
             filename: file.name!,
@@ -142,6 +140,7 @@ export class GoogleDriveStorage implements StorageProvider {
             size: parseInt(file.size || "0"),
             uploadedAt: new Date(file.createdTime!),
             uploadedBy: uploadedByMatch?.[1],
+            uploadMessage: uploadMessageMatch?.[1],
             url: `https://drive.google.com/uc?export=view&id=${file.id}`,
             thumbnailUrl:
               file.thumbnailLink ||
@@ -169,7 +168,8 @@ export class GoogleDriveStorage implements StorageProvider {
       });
 
       const file = response.data;
-      const uploadedByMatch = file.description?.match(/Uploaded by: (.+)/);
+      const uploadedByMatch = file.description?.match(/Uploaded by: ([^\n]+)/);
+      const uploadMessageMatch = file.description?.match(/Message: ([\s\S]+)/);
 
       return {
         id: file.id!,
@@ -179,6 +179,7 @@ export class GoogleDriveStorage implements StorageProvider {
         size: parseInt(file.size || "0"),
         uploadedAt: new Date(file.createdTime!),
         uploadedBy: uploadedByMatch?.[1],
+        uploadMessage: uploadMessageMatch?.[1],
         url: `https://drive.google.com/uc?export=view&id=${file.id}`,
         thumbnailUrl:
           file.thumbnailLink ||
@@ -201,4 +202,18 @@ export class GoogleDriveStorage implements StorageProvider {
   getThumbnailUrl(id: string, width: number): string {
     return `https://drive.google.com/thumbnail?id=${id}&sz=w${width}`;
   }
+}
+
+function serializeUploadDescription(
+  uploadedBy?: string,
+  uploadMessage?: string
+): string | undefined {
+  const parts = [];
+  if (uploadedBy) {
+    parts.push(`Uploaded by: ${uploadedBy}`);
+  }
+  if (uploadMessage) {
+    parts.push(`Message: ${uploadMessage}`);
+  }
+  return parts.length > 0 ? parts.join("\n") : undefined;
 }

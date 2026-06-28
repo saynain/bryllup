@@ -29,6 +29,7 @@ export class VercelBlobStorage implements StorageProvider {
         size: 0,
         uploadedAt: new Date(),
         uploadedBy: input.uploadedBy,
+        uploadMessage: input.uploadMessage,
         url: blob.url,
         thumbnailUrl: `${blob.url}?w=400&q=75`,
       };

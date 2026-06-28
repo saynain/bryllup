@@ -31,6 +31,8 @@ interface UploadProgress {
 
 interface UploadOptions {
   onProgress?: (progress: UploadProgress) => void;
+  uploadedBy?: string;
+  uploadMessage?: string;
 }
 
 export class MediaUploadError extends Error {
@@ -86,13 +88,13 @@ export async function uploadMediaFile(
   options: UploadOptions = {}
 ): Promise<void> {
   if (!isCloudflareMediaEnabled()) {
-    await uploadToNextApi(file);
+    await uploadToNextApi(file, options);
     options.onProgress?.({ loaded: file.size, total: file.size });
     return;
   }
 
   const uploadFile = await prepareFileForCloudflareUpload(file);
-  const upload = await createCloudflareUpload(uploadFile);
+  const upload = await createCloudflareUpload(uploadFile, options);
 
   if (upload.uploadProtocol === "tus") {
     if (!upload.uploadUrl) {
@@ -287,13 +289,21 @@ async function uploadR2VideoThumbnail(
   }
 }
 
-async function uploadToNextApi(file: File): Promise<void> {
+async function uploadToNextApi(file: File, options: UploadOptions): Promise<void> {
   if (!file.type.startsWith("image/")) {
     throw new Error("Videoopplasting krever Cloudflare media-API");
   }
 
   const formData = new FormData();
   formData.append("file", file);
+  const uploadedBy = cleanOptionalText(options.uploadedBy, 120);
+  const uploadMessage = cleanOptionalText(options.uploadMessage, 500);
+  if (uploadedBy) {
+    formData.append("uploadedBy", uploadedBy);
+  }
+  if (uploadMessage) {
+    formData.append("uploadMessage", uploadMessage);
+  }
 
   const response = await fetch("/api/photos", {
     method: "POST",
@@ -306,8 +316,13 @@ async function uploadToNextApi(file: File): Promise<void> {
   }
 }
 
-async function createCloudflareUpload(file: File): Promise<CreateUploadResponse> {
+async function createCloudflareUpload(
+  file: File,
+  options: UploadOptions
+): Promise<CreateUploadResponse> {
   const mediaType = getFileMediaType(file);
+  const uploadedBy = cleanOptionalText(options.uploadedBy, 120);
+  const uploadMessage = cleanOptionalText(options.uploadMessage, 500);
   const response = await fetch(`${MEDIA_API_URL}/uploads`, {
     method: "POST",
     headers: {
@@ -320,6 +335,8 @@ async function createCloudflareUpload(file: File): Promise<CreateUploadResponse>
       mediaType,
       size: file.size,
       takenAt: fileTakenAt(file),
+      uploadedBy,
+      uploadMessage,
     }),
   });
 
@@ -486,6 +503,11 @@ function getTusChunkSize(): number {
     window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 768;
 
   return isMobile ? 8 * 1024 * 1024 : 24 * 1024 * 1024;
+}
+
+function cleanOptionalText(value: string | undefined, maxLength: number): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : undefined;
 }
 
 async function renderImageToJpeg(file: File): Promise<Blob> {

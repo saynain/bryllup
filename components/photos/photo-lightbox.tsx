@@ -190,11 +190,7 @@ export function PhotoLightbox({
           </Button>
         )}
 
-        <div
-          className="relative flex min-h-0 flex-1 items-center justify-center"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-        >
+        <div className="relative flex min-h-0 flex-1 items-center justify-center">
           {/* Media */}
           <motion.div
             key={photo.id}
@@ -203,6 +199,9 @@ export function PhotoLightbox({
             exit={{ opacity: 0, scale: 0.98, x: -12 }}
             transition={{ duration: 0.18 }}
             className="relative flex max-h-full max-w-full items-center justify-center"
+            style={{ touchAction: "pan-y" }}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             onClick={(e) => e.stopPropagation()}
           >
             {isVideo ? (
@@ -239,11 +238,40 @@ export function PhotoLightbox({
 
         {/* Photo info */}
         <div
-          className="mt-2 shrink-0 text-center text-white sm:mt-4"
+          className="mt-2 shrink-0 space-y-2 text-center text-white sm:mt-4"
           onClick={(e) => e.stopPropagation()}
         >
+          <div className="flex items-center justify-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Forrige"
+              disabled={!hasPrev}
+              className="h-10 rounded-full bg-white/10 px-4 text-white ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-30"
+              onClick={handlePrev}
+            >
+              <ChevronLeft className="h-5 w-5" />
+              Forrige
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Neste"
+              disabled={!hasNext}
+              className="h-10 rounded-full bg-white/10 px-4 text-white ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-30"
+              onClick={handleNext}
+            >
+              Neste
+              <ChevronRight className="h-5 w-5" />
+            </Button>
+          </div>
           {photo.uploadedBy && (
             <p className="text-sm opacity-80">Fra {photo.uploadedBy}</p>
+          )}
+          {photo.uploadMessage && (
+            <p className="mx-auto max-w-xl text-sm italic leading-relaxed text-white/80">
+              &ldquo;{photo.uploadMessage}&rdquo;
+            </p>
           )}
         </div>
       </motion.div>
@@ -252,5 +280,5 @@ export function PhotoLightbox({
 }
 
 function isInteractiveSwipeTarget(target: EventTarget): boolean {
-  return target instanceof Element && Boolean(target.closest("button, a, video, iframe"));
+  return target instanceof Element && Boolean(target.closest("button, a, iframe"));
 }

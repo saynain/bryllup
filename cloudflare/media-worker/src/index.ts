@@ -136,6 +136,7 @@ interface MediaRow {
   mime_type: string;
   size: number;
   uploaded_by: string | null;
+  upload_message: string | null;
   object_key: string | null;
   provider_id: string | null;
   url: string | null;
@@ -154,6 +155,7 @@ interface CreateUploadRequest {
   mediaType?: MediaType;
   size?: number;
   uploadedBy?: string;
+  uploadMessage?: string;
   takenAt?: string;
 }
 
@@ -359,7 +361,8 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
   const originalName = (body.filename || filename).slice(0, 240);
   const mimeType = (body.mimeType || "").toLowerCase();
   const size = Number(body.size || 0);
-  const uploadedBy = body.uploadedBy?.slice(0, 120) || null;
+  const uploadedBy = sanitizeOptionalText(body.uploadedBy, 120);
+  const uploadMessage = sanitizeOptionalText(body.uploadMessage, 500);
   const takenAt = parseOptionalIsoDate(body.takenAt);
 
   if (!filename || !mimeType || !Number.isFinite(size) || size <= 0) {
@@ -393,6 +396,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        uploadMessage,
         takenAt,
       });
     }
@@ -408,6 +412,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        uploadMessage,
         takenAt,
       });
     }
@@ -424,6 +429,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        uploadMessage,
         takenAt,
       });
     }
@@ -435,6 +441,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        uploadMessage,
         takenAt,
       });
     }
@@ -447,6 +454,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        uploadMessage,
         takenAt,
       });
     }
@@ -458,6 +466,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
       mimeType,
       size,
       uploadedBy,
+      uploadMessage,
       takenAt,
     });
   }
@@ -470,6 +479,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        uploadMessage,
         takenAt,
       });
     } catch (error) {
@@ -485,6 +495,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         mimeType,
         size,
         uploadedBy,
+        uploadMessage,
         takenAt,
       });
     } catch (error) {
@@ -499,6 +510,7 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
     mimeType,
     size,
     uploadedBy,
+    uploadMessage,
     takenAt,
   });
 }
@@ -555,6 +567,7 @@ async function createImageDirectUpload(
     JSON.stringify({
       filename: input.originalName,
       uploadedBy: input.uploadedBy,
+      uploadMessage: input.uploadMessage,
       createdBy: "bryllup-media-worker",
     })
   );
@@ -597,6 +610,7 @@ async function createImageDirectUpload(
     mimeType: input.mimeType,
     size: input.size,
     uploadedBy: input.uploadedBy,
+    uploadMessage: input.uploadMessage,
     providerId: imageId,
     url: publicUrl,
     thumbnailUrl,
@@ -634,6 +648,7 @@ async function uploadHostedImage(request: Request, env: Env, id: string): Promis
       metadata: {
         mediaId: row.id,
         filename: row.original_name,
+        uploadMessage: row.upload_message,
         source: "bryllup-media-worker",
       },
     });
@@ -708,6 +723,7 @@ async function createStreamRestUpload(
         meta: {
           name: input.originalName,
           uploadedBy: input.uploadedBy || "",
+          uploadMessage: input.uploadMessage || "",
           source: "bryllup-media-worker",
         },
       }),
@@ -740,6 +756,7 @@ async function createStreamRestUpload(
     mimeType: input.mimeType,
     size: input.size,
     uploadedBy: input.uploadedBy,
+    uploadMessage: input.uploadMessage,
     providerId: streamId,
     url: streamIframeUrl(streamId),
     thumbnailUrl: streamThumbnailUrl(streamId),
@@ -770,6 +787,7 @@ async function createStreamTusUpload(
     name: input.originalName,
     maxDurationSeconds: String(maxDurationSeconds),
     uploadedBy: input.uploadedBy || "",
+    uploadMessage: input.uploadMessage || "",
     source: "bryllup-media-worker",
   });
 
@@ -803,6 +821,7 @@ async function createStreamTusUpload(
     mimeType: input.mimeType,
     size: input.size,
     uploadedBy: input.uploadedBy,
+    uploadMessage: input.uploadMessage,
     providerId: streamId,
     url: streamIframeUrl(streamId),
     thumbnailUrl: streamThumbnailUrl(streamId),
@@ -837,6 +856,7 @@ async function createStreamBindingUpload(
     meta: {
       name: input.originalName,
       uploadedBy: input.uploadedBy || "",
+      uploadMessage: input.uploadMessage || "",
       source: "bryllup-media-worker",
     },
   });
@@ -851,6 +871,7 @@ async function createStreamBindingUpload(
     mimeType: input.mimeType,
     size: input.size,
     uploadedBy: input.uploadedBy,
+    uploadMessage: input.uploadMessage,
     providerId: result.uid,
     url: streamIframeUrl(result.uid),
     thumbnailUrl: streamThumbnailUrl(result.uid),
@@ -878,6 +899,7 @@ interface MediaInsertInput {
   mimeType: string;
   size: number;
   uploadedBy: string | null;
+  uploadMessage: string | null;
   takenAt?: string | null;
   objectKey?: string;
   providerId?: string;
@@ -937,6 +959,7 @@ async function createR2MultipartUpload(
     customMetadata: {
       originalName: input.originalName,
       mediaId: id,
+      uploadMessage: input.uploadMessage || "",
     },
   });
 
@@ -993,6 +1016,7 @@ async function uploadR2Object(request: Request, env: Env, id: string): Promise<R
     customMetadata: {
       originalName: row.original_name,
       mediaId: row.id,
+      uploadMessage: row.upload_message || "",
     },
   });
 
@@ -1307,8 +1331,9 @@ async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO media (
       id, provider, media_type, status, filename, original_name, mime_type, size,
-      uploaded_by, object_key, provider_id, url, thumbnail_url, taken_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      uploaded_by, upload_message, object_key, provider_id, url, thumbnail_url, taken_at,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       input.id,
@@ -1320,6 +1345,7 @@ async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
       input.mimeType,
       input.size,
       input.uploadedBy,
+      input.uploadMessage,
       input.objectKey || null,
       input.providerId || null,
       input.url || null,
@@ -1383,6 +1409,7 @@ function toPublicMedia(row: MediaRow, request: Request) {
     takenAt: row.taken_at || undefined,
     uploadedAt: row.uploaded_at || row.created_at,
     uploadedBy: row.uploaded_by || undefined,
+    uploadMessage: row.upload_message || undefined,
     url: row.url || r2Url,
     thumbnailUrl: row.thumbnail_url || (row.media_type === "image" ? row.url || r2Url : undefined),
   };
@@ -1450,6 +1477,12 @@ function sanitizeFilename(filename: string): string {
   const base = filename.split(/[\\/]/).pop()?.trim() || "";
   const safe = base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/_+/g, "_");
   return safe.slice(0, 160) || `upload-${Date.now()}`;
+}
+
+function sanitizeOptionalText(value: unknown, maxLength: number): string | null {
+  return typeof value === "string" && value.trim()
+    ? value.trim().slice(0, maxLength)
+    : null;
 }
 
 function canUseCloudflareImages(env: Env): boolean {
