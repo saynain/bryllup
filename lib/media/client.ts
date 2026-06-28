@@ -33,6 +33,18 @@ interface UploadOptions {
   onProgress?: (progress: UploadProgress) => void;
 }
 
+export class MediaUploadError extends Error {
+  readonly status?: number;
+  readonly retryable: boolean;
+
+  constructor(message: string, options: { status?: number; retryable?: boolean } = {}) {
+    super(message);
+    this.name = "MediaUploadError";
+    this.status = options.status;
+    this.retryable = options.retryable ?? true;
+  }
+}
+
 const MEDIA_API_URL = process.env.NEXT_PUBLIC_MEDIA_API_URL?.replace(/\/$/, "");
 const MEDIA_UPLOAD_TOKEN = process.env.NEXT_PUBLIC_MEDIA_UPLOAD_TOKEN;
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif"]);
@@ -40,6 +52,10 @@ const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "m4v", "webm", "mpeg", "mpg"]);
 
 export function isCloudflareMediaEnabled(): boolean {
   return Boolean(MEDIA_API_URL);
+}
+
+export function isRetryableUploadError(error: unknown): boolean {
+  return error instanceof MediaUploadError ? error.retryable : true;
 }
 
 export async function fetchMediaList(params: {
@@ -97,7 +113,11 @@ export async function uploadMediaFile(
     });
 
     if (!completeResponse.ok) {
-      throw new Error("Opplastingen ble fullført, men kunne ikke registreres");
+      const data = await completeResponse.json().catch(() => null);
+      throw uploadError(
+        data?.error || "Opplastingen ble fullført, men kunne ikke registreres",
+        completeResponse.status
+      );
     }
   }
 }
@@ -191,7 +211,7 @@ function uploadChunkWithXhr(
     request.onload = () => {
       const data = parseJsonResponse(request.responseText);
       if (request.status < 200 || request.status >= 300) {
-        reject(new Error(data?.error || "En videodel feilet"));
+        reject(uploadError(data?.error || "En videodel feilet", request.status));
         return;
       }
 
@@ -208,9 +228,10 @@ function uploadChunkWithXhr(
       });
     };
 
-    request.onerror = () => reject(new Error("Nettverket avbrøt en videodel"));
-    request.ontimeout = () => reject(new Error("En videodel brukte for lang tid"));
-    request.onabort = () => reject(new Error("Videoopplastingen ble avbrutt"));
+    request.onerror = () => reject(new MediaUploadError("Nettverket avbrøt en videodel"));
+    request.ontimeout = () => reject(new MediaUploadError("En videodel brukte for lang tid"));
+    request.onabort = () =>
+      reject(new MediaUploadError("Videoopplastingen ble avbrutt", { retryable: false }));
     request.send(chunk);
   });
 }
@@ -231,7 +252,10 @@ async function completeR2Multipart(
 
     if (!completeResponse.ok) {
       const data = await completeResponse.json().catch(() => null);
-      throw new Error(data?.error || "Kunne ikke fullføre videoopplasting");
+      throw uploadError(
+        data?.error || "Kunne ikke fullføre videoopplasting",
+        completeResponse.status
+      );
     }
   });
 }
@@ -278,7 +302,7 @@ async function uploadToNextApi(file: File): Promise<void> {
 
   if (!response.ok) {
     const data = await response.json().catch(() => null);
-    throw new Error(data?.error || "Opplasting feilet");
+    throw uploadError(data?.error || "Opplasting feilet", response.status);
   }
 }
 
@@ -301,7 +325,7 @@ async function createCloudflareUpload(file: File): Promise<CreateUploadResponse>
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(data?.error || "Kunne ikke starte opplasting");
+    throw uploadError(data?.error || "Kunne ikke starte opplasting", response.status);
   }
 
   return data;
@@ -388,7 +412,7 @@ function uploadBodyWithXhr(
     request.onload = () => {
       if (request.status < 200 || request.status >= 300) {
         const data = parseJsonResponse(request.responseText);
-        reject(new Error(data?.error || "Opplasting feilet"));
+        reject(uploadError(data?.error || "Opplasting feilet", request.status));
         return;
       }
 
@@ -396,9 +420,10 @@ function uploadBodyWithXhr(
       resolve();
     };
 
-    request.onerror = () => reject(new Error("Nettverket avbrøt opplastingen"));
-    request.ontimeout = () => reject(new Error("Opplastingen brukte for lang tid"));
-    request.onabort = () => reject(new Error("Opplastingen ble avbrutt"));
+    request.onerror = () => reject(new MediaUploadError("Nettverket avbrøt opplastingen"));
+    request.ontimeout = () => reject(new MediaUploadError("Opplastingen brukte for lang tid"));
+    request.onabort = () =>
+      reject(new MediaUploadError("Opplastingen ble avbrutt", { retryable: false }));
     request.send(body);
   });
 }
@@ -426,7 +451,7 @@ async function uploadTus(
 
     if (!response.ok) {
       offset = await getTusOffset(uploadUrl);
-      throw new Error("Videoopplasting feilet");
+      throw uploadError("Videoopplasting feilet", response.status);
     }
 
     const nextOffset = Number(response.headers.get("Upload-Offset"));
@@ -487,7 +512,12 @@ async function renderImageToJpeg(file: File): Promise<Blob> {
       }
       settled = true;
       cleanup();
-      reject(new Error("iPhone-bildet kunne ikke konverteres. Prøv å velge JPEG-kompatibel eksport."));
+      reject(
+        new MediaUploadError(
+          "iPhone-bildet kunne ikke konverteres. Prøv å velge JPEG-kompatibel eksport.",
+          { retryable: false }
+        )
+      );
     };
 
     const done = (blob: Blob | null) => {
@@ -673,6 +703,17 @@ function parseJsonResponse(value: string): Partial<UploadedPart> & { error?: str
   }
 }
 
+function uploadError(message: string, status: number): MediaUploadError {
+  return new MediaUploadError(message, {
+    status,
+    retryable: isRetryableStatus(status),
+  });
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+}
+
 async function retryPart<T>(operation: () => Promise<T>): Promise<T> {
   let lastError: unknown;
 
@@ -681,6 +722,9 @@ async function retryPart<T>(operation: () => Promise<T>): Promise<T> {
       return await operation();
     } catch (error) {
       lastError = error;
+      if (!isRetryableUploadError(error) || attempt === 2) {
+        break;
+      }
       await new Promise((resolve) => window.setTimeout(resolve, 800 * (attempt + 1)));
     }
   }

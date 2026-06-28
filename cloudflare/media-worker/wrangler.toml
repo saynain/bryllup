@@ -25,7 +25,8 @@ CORS_ORIGINS = "http://localhost:3000,https://test.bryllup.rylands.no,https://br
 
 # Cloudflare Images delivery base, for example:
 # https://imagedelivery.net/<account_hash>
-# Leave empty to store images in R2 via the Worker streaming endpoint.
+# New image uploads use R2 to avoid Cloudflare Images plan/quota limits during the event.
+IMAGE_UPLOAD_PROVIDER = "r2"
 IMAGE_DELIVERY_BASE_URL = ""
 IMAGE_VARIANT_PUBLIC = "public"
 IMAGE_VARIANT_THUMB = "thumbnail"
