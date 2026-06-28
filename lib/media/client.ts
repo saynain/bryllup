@@ -75,18 +75,19 @@ export async function uploadMediaFile(
     return;
   }
 
-  const upload = await createCloudflareUpload(file);
+  const uploadFile = await prepareFileForCloudflareUpload(file);
+  const upload = await createCloudflareUpload(uploadFile);
 
   if (upload.uploadProtocol === "tus") {
     if (!upload.uploadUrl) {
       throw new Error("Serveren mangler videoopplastingsadresse");
     }
-    await uploadTus(file, upload.uploadUrl, options);
+    await uploadTus(uploadFile, upload.uploadUrl, options);
   } else if (upload.uploadProtocol === "r2-multipart") {
-    await uploadR2Multipart(file, upload, options);
+    await uploadR2Multipart(uploadFile, upload, options);
     return;
   } else {
-    await uploadFormOrPut(file, upload, options);
+    await uploadFormOrPut(uploadFile, upload, options);
   }
 
   if (upload.completeUrl) {
@@ -306,6 +307,24 @@ async function createCloudflareUpload(file: File): Promise<CreateUploadResponse>
   return data;
 }
 
+async function prepareFileForCloudflareUpload(file: File): Promise<File> {
+  if (getFileMediaType(file) !== "image" || !isHeicFile(file)) {
+    return file;
+  }
+
+  return convertHeicToJpeg(file);
+}
+
+async function convertHeicToJpeg(file: File): Promise<File> {
+  const jpeg = await renderImageToJpeg(file);
+  const filename = file.name.replace(/\.(heic|heif)$/i, ".jpg") || `${file.name}.jpg`;
+
+  return new File([jpeg], filename, {
+    type: "image/jpeg",
+    lastModified: file.lastModified,
+  });
+}
+
 async function uploadFormOrPut(
   file: File,
   upload: CreateUploadResponse,
@@ -317,7 +336,7 @@ async function uploadFormOrPut(
 
   const method = upload.uploadMethod === "PUT" ? "PUT" : "POST";
   const headers = new Headers(upload.uploadHeaders || undefined);
-  let body: BodyInit = file;
+  let body: XMLHttpRequestBodyInit = file;
 
   if (method === "POST" && upload.uploadFieldName) {
     const formData = new FormData();
@@ -327,17 +346,61 @@ async function uploadFormOrPut(
     headers.set("Content-Type", file.type || "application/octet-stream");
   }
 
-  const response = await fetch(upload.uploadUrl, {
+  if (shouldAttachUploadToken(upload.uploadUrl)) {
+    Object.entries(uploadRequestHeaders()).forEach(([key, value]) => {
+      headers.set(key, value);
+    });
+  }
+
+  await uploadBodyWithXhr(
+    upload.uploadUrl,
     method,
     headers,
     body,
+    file.size,
+    options.onProgress
+  );
+}
+
+function uploadBodyWithXhr(
+  url: string,
+  method: "POST" | "PUT" | "PATCH",
+  headers: Headers,
+  body: XMLHttpRequestBodyInit,
+  totalBytes: number,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open(method, url);
+    request.timeout = 180000;
+
+    headers.forEach((value, key) => {
+      request.setRequestHeader(key, value);
+    });
+
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        onProgress?.({ loaded: event.loaded, total: event.total || totalBytes });
+      }
+    };
+
+    request.onload = () => {
+      if (request.status < 200 || request.status >= 300) {
+        const data = parseJsonResponse(request.responseText);
+        reject(new Error(data?.error || "Opplasting feilet"));
+        return;
+      }
+
+      onProgress?.({ loaded: totalBytes, total: totalBytes });
+      resolve();
+    };
+
+    request.onerror = () => reject(new Error("Nettverket avbrøt opplastingen"));
+    request.ontimeout = () => reject(new Error("Opplastingen brukte for lang tid"));
+    request.onabort = () => reject(new Error("Opplastingen ble avbrutt"));
+    request.send(body);
   });
-
-  if (!response.ok) {
-    throw new Error("Opplasting feilet");
-  }
-
-  options.onProgress?.({ loaded: file.size, total: file.size });
 }
 
 async function uploadTus(
@@ -397,6 +460,78 @@ function getTusChunkSize(): number {
     window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 768;
 
   return isMobile ? 8 * 1024 * 1024 : 24 * 1024 * 1024;
+}
+
+async function renderImageToJpeg(file: File): Promise<Blob> {
+  if (typeof document === "undefined") {
+    throw new Error("HEIC-bildet kunne ikke konverteres i denne nettleseren");
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    let settled = false;
+    let timeoutId: number | undefined;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      URL.revokeObjectURL(objectUrl);
+    };
+
+    const fail = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(new Error("iPhone-bildet kunne ikke konverteres. Prøv å velge JPEG-kompatibel eksport."));
+    };
+
+    const done = (blob: Blob | null) => {
+      if (settled) {
+        return;
+      }
+      if (!blob) {
+        fail();
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(blob);
+    };
+
+    image.onload = () => {
+      const sourceWidth = image.naturalWidth;
+      const sourceHeight = image.naturalHeight;
+
+      if (!sourceWidth || !sourceHeight) {
+        fail();
+        return;
+      }
+
+      const maxSize = 2560;
+      const scale = Math.min(maxSize / sourceWidth, maxSize / sourceHeight, 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(sourceWidth * scale));
+      canvas.height = Math.max(1, Math.round(sourceHeight * scale));
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        fail();
+        return;
+      }
+
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(done, "image/jpeg", 0.86);
+    };
+
+    image.onerror = fail;
+    timeoutId = window.setTimeout(fail, 10000);
+    image.src = objectUrl;
+  });
 }
 
 async function createVideoThumbnail(file: File): Promise<Blob | null> {
@@ -502,6 +637,20 @@ function getFileMediaType(file: File): MediaType | null {
   }
 
   return null;
+}
+
+function isHeicFile(file: File): boolean {
+  const mimeType = file.type.toLowerCase();
+  if (mimeType === "image/heic" || mimeType === "image/heif") {
+    return true;
+  }
+
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return extension === "heic" || extension === "heif";
+}
+
+function shouldAttachUploadToken(url: string): boolean {
+  return Boolean(MEDIA_UPLOAD_TOKEN && MEDIA_API_URL && url.startsWith(MEDIA_API_URL));
 }
 
 function fallbackMimeType(mediaType: MediaType | null): string {
