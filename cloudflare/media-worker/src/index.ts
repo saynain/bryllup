@@ -531,17 +531,31 @@ async function uploadHostedImage(request: Request, env: Env, id: string): Promis
     return json(request, env, { error: "Images binding is not configured" }, 500);
   }
 
-  const image = await env.IMAGES.hosted.upload(request.body, {
-    id,
-    filename: row.original_name,
-    requireSignedURLs: false,
-    creator: row.uploaded_by || undefined,
-    metadata: {
-      mediaId: row.id,
+  let image: HostedImageMetadata;
+  try {
+    image = await env.IMAGES.hosted.upload(request.body, {
+      id,
       filename: row.original_name,
-      source: "bryllup-media-worker",
-    },
-  });
+      requireSignedURLs: false,
+      creator: row.uploaded_by || undefined,
+      metadata: {
+        mediaId: row.id,
+        filename: row.original_name,
+        source: "bryllup-media-worker",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Image upload failed";
+    const now = new Date().toISOString();
+    await env.DB.prepare(
+      `UPDATE media
+       SET status = 'error', error = ?, updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(message.slice(0, 500), now, id)
+      .run();
+    throw new HttpError(message, 415);
+  }
 
   const imageId = image.id || id;
   const url = pickHostedImageUrl(env, image, imageId, publicImageVariant(env));
