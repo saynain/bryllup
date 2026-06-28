@@ -247,7 +247,7 @@ export function PhotoLightbox({
               size="sm"
               aria-label="Forrige"
               disabled={!hasPrev}
-              className="h-10 rounded-full bg-white/10 px-4 text-white ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-30"
+              className="h-11 min-w-28 rounded-full bg-black/45 px-4 text-white shadow-sm ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-30"
               onClick={handlePrev}
             >
               <ChevronLeft className="h-5 w-5" />
@@ -258,7 +258,7 @@ export function PhotoLightbox({
               size="sm"
               aria-label="Neste"
               disabled={!hasNext}
-              className="h-10 rounded-full bg-white/10 px-4 text-white ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-30"
+              className="h-11 min-w-28 rounded-full bg-black/45 px-4 text-white shadow-sm ring-1 ring-white/15 hover:bg-white/20 disabled:opacity-30"
               onClick={handleNext}
             >
               Neste
