@@ -47,7 +47,7 @@ const parkingImages: ParkingImage[] = [
     details: [
       "Første røde kryss: Her er det plass til omtrent 6 biler.",
       "Andre røde kryss: Plassen er reservert til gjester som skal la bilen stå over natten.",
-      "Tredje røde kryss (langs ridebanen): Det er plass til 8-10 biler.",
+      "Tredje røde kryss (ridebanen): Det er plass til biler langs ridebanen og inne på ridebanen.",
     ],
     previewClassName: "object-[center_18%]",
   },
