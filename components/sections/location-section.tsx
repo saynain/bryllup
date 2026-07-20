@@ -47,7 +47,7 @@ const parkingImages: ParkingImage[] = [
     details: [
       "Første røde kryss: Her er det plass til omtrent 6 biler.",
       "Andre røde kryss: Plassen er reservert til gjester som skal la bilen stå over natten.",
-      "Tredje røde kryss (langs ridebanen): Det er plass til 8-10 biler.",
+      "Tredje røde kryss (ridebanen): Det er plass til biler langs ridebanen og inne på ridebanen.",
     ],
     previewClassName: "object-[center_18%]",
   },
@@ -216,9 +216,11 @@ export function LocationSection() {
               </p>
               <p>
                 <strong>Øvre-Eide Gård:</strong> Se oppmerkede parkeringsplasser
-                på parkeringskartet under. Det er plass til 14-16 biler totalt.
-                Dersom begge plassene er fulle, åpnes ridebanen for parkering.
-                Ring 90843412 for spørsmål rundt parkering.
+                på parkeringskartet under. Ved parkering inne på ridebanen er det
+                viktig å holde til venstre når dere kjører inn, for å unngå å
+                subbe borti en bjelke. Når dere parkerer inne på ridebanen må
+                dere stå på høyre side mot huset, og ikke foran hestene. Ring
+                90843412 for spørsmål rundt parkering.
               </p>
             </div>
 

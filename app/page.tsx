@@ -203,7 +203,7 @@ export default function Home() {
               <p className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed">
                 Etter vielsen samles vi på Øvre-Eide Gård for litt mingling,
                 hvor det vil bli servert velkomstdrink.
-                <span className="mt-3 block">Middagen starter kl. 17:00.</span>
+                <span className="mt-3 block">Middagen starter kl. 18:00.</span>
               </p>
               <div className="mx-auto my-6 h-px w-full max-w-md bg-[#B8A491]/45" />
               <p className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed">
