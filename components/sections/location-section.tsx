@@ -218,9 +218,9 @@ export function LocationSection() {
                 <strong>Øvre-Eide Gård:</strong> Se oppmerkede parkeringsplasser
                 på parkeringskartet under. Ved parkering inne på ridebanen er det
                 viktig å holde til venstre når dere kjører inn, for å unngå å
-                subbe borti bjelken. Parker langs høyre side av ridebanen, mot
-                huset, og ikke foran hestene. Ring 90843412 for spørsmål rundt
-                parkering.
+                subbe borti en bjelke. Når dere parkerer inne på ridebanen må
+                dere parkere på høyre side mot huset, og ikke foran hestene. Ring
+                90843412 for spørsmål rundt parkering.
               </p>
             </div>
 
