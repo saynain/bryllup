@@ -10,6 +10,13 @@ type ImageUploadProvider =
   | "images"
   | "images-hosted";
 
+interface AppSubtleCrypto extends SubtleCrypto {
+  timingSafeEqual(
+    a: ArrayBuffer | ArrayBufferView,
+    b: ArrayBuffer | ArrayBufferView
+  ): boolean;
+}
+
 interface MediaCursor {
   sortAt: string;
   createdAt: string;
@@ -87,11 +94,42 @@ interface AppR2Bucket {
   resumeMultipartUpload(key: string, uploadId: string): AppR2MultipartUpload;
 }
 
+interface AppStreamVideo {
+  id: string;
+  thumbnail: string;
+  readyToStream: boolean;
+  status: {
+    state: string;
+    errorReasonCode?: string;
+    errorReasonText?: string;
+  };
+  meta: Record<string, string>;
+  duration: number;
+  preview?: string;
+}
+
+interface AppStreamVideoHandle {
+  details(): Promise<AppStreamVideo>;
+}
+
 interface StreamBinding {
+  upload(
+    url: string,
+    options?: {
+      creator?: string;
+      meta?: Record<string, string>;
+      requireSignedURLs?: boolean;
+      thumbnailTimestampPct?: number;
+    }
+  ): Promise<AppStreamVideo>;
+  video(id: string): AppStreamVideoHandle;
+  videos: {
+    list(options?: { limit?: number }): Promise<AppStreamVideo[]>;
+  };
   createDirectUpload(options: {
     maxDurationSeconds: number;
     meta?: Record<string, string>;
-  }): Promise<{ uid: string; uploadURL: string }>;
+  }): Promise<{ id?: string; uid?: string; uploadURL: string }>;
 }
 
 interface HostedImageMetadata {
@@ -153,6 +191,7 @@ interface Env {
   STREAM_UPLOAD_PROTOCOL?: "auto" | "form" | "tus" | "r2-multipart";
   UPLOAD_TOKEN?: string;
   ARCHIVE_UPLOAD_TOKEN?: string;
+  MIGRATION_TOKEN?: string;
 }
 
 interface MediaRow {
@@ -186,6 +225,17 @@ interface CreateUploadRequest {
   uploadedBy?: string;
   uploadMessage?: string;
   takenAt?: string;
+}
+
+interface StreamMigrationRow {
+  media_id: string;
+  stream_id: string;
+  source_provider: string;
+  source_object_key: string | null;
+  status: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 const IMAGE_TYPES = new Set([
@@ -273,6 +323,35 @@ export default {
       ) {
         requirePhotoArchiveUploadToken(request, env);
         return abortPhotoArchiveUpload(request, env);
+      }
+
+      if (request.method === "GET" && path === "/admin/stream-migrations") {
+        await requireMigrationToken(request, env);
+        return listStreamMigrations(request, env);
+      }
+
+      const streamMigrationFinalizeMatch = path.match(
+        /^\/admin\/stream-migrations\/([^/]+)\/finalize$/
+      );
+      if (request.method === "POST" && streamMigrationFinalizeMatch) {
+        await requireMigrationToken(request, env);
+        return finalizeStreamMigration(
+          request,
+          env,
+          decodeURIComponent(streamMigrationFinalizeMatch[1])
+        );
+      }
+
+      const streamMigrationMatch = path.match(
+        /^\/admin\/stream-migrations\/([^/]+)$/
+      );
+      if (request.method === "POST" && streamMigrationMatch) {
+        await requireMigrationToken(request, env);
+        return startStreamMigration(
+          request,
+          env,
+          decodeURIComponent(streamMigrationMatch[1])
+        );
       }
 
       const mediaMatch = path.match(/^\/media\/([^/]+)$/);
@@ -386,7 +465,7 @@ export default {
 
       return json(request, env, { error: "Not found" }, 404);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unexpected error";
+      const message = unknownErrorMessage(error);
       const status = error instanceof HttpError ? error.status : 500;
       return json(request, env, { error: message }, status);
     }
@@ -951,9 +1030,13 @@ async function createStreamBindingUpload(
       source: "bryllup-media-worker",
     },
   });
+  const streamId = result.id || result.uid;
+  if (!streamId) {
+    throw new HttpError("Stream did not return an upload ID", 502);
+  }
 
   await insertMedia(env, {
-    id: result.uid,
+    id: streamId,
     provider: "cloudflare-stream",
     mediaType: "video",
     status: "pending",
@@ -963,20 +1046,20 @@ async function createStreamBindingUpload(
     size: input.size,
     uploadedBy: input.uploadedBy,
     uploadMessage: input.uploadMessage,
-    providerId: result.uid,
-    url: streamIframeUrl(result.uid),
-    thumbnailUrl: streamThumbnailUrl(result.uid),
+    providerId: streamId,
+    url: streamIframeUrl(streamId),
+    thumbnailUrl: streamThumbnailUrl(streamId),
   });
 
   return json(request, env, {
-    id: result.uid,
+    id: streamId,
     type: "video",
     provider: "cloudflare-stream",
     uploadMethod: "POST" satisfies UploadMethod,
     uploadProtocol: "form" satisfies UploadProtocol,
     uploadUrl: result.uploadURL,
     uploadFieldName: "file",
-    completeUrl: absoluteUrl(request, `/uploads/${encodeURIComponent(result.uid)}/complete`),
+    completeUrl: absoluteUrl(request, `/uploads/${encodeURIComponent(streamId)}/complete`),
   });
 }
 
@@ -1447,6 +1530,247 @@ async function abortPhotoArchiveUpload(request: Request, env: Env): Promise<Resp
   return new Response(null, { status: 204, headers: corsHeaders(request, env) });
 }
 
+async function listStreamMigrations(request: Request, env: Env): Promise<Response> {
+  const rows = (
+    await env.DB.prepare(
+      `SELECT
+         m.id, m.original_name, m.size, m.provider, m.status AS media_status,
+         sm.stream_id, sm.status AS migration_status, sm.error, sm.updated_at
+       FROM media m
+       LEFT JOIN stream_migrations sm ON sm.media_id = m.id
+       WHERE m.media_type = 'video' AND m.status = 'ready'
+       ORDER BY m.created_at, m.id`
+    ).all<{
+      id: string;
+      original_name: string;
+      size: number;
+      provider: string;
+      media_status: string;
+      stream_id: string | null;
+      migration_status: string | null;
+      error: string | null;
+      updated_at: string | null;
+    }>()
+  ).results;
+
+  return json(request, env, {
+    videos: rows.map((row) => ({
+      id: row.id,
+      originalName: row.original_name,
+      size: row.size,
+      provider: row.provider,
+      mediaStatus: row.media_status,
+      streamId: row.stream_id || undefined,
+      migrationStatus: row.migration_status || "not-started",
+      error: row.error || undefined,
+      updatedAt: row.updated_at || undefined,
+    })),
+  });
+}
+
+async function startStreamMigration(
+  request: Request,
+  env: Env,
+  id: string
+): Promise<Response> {
+  if (!env.STREAM) {
+    throw new HttpError("Stream binding is not configured", 503);
+  }
+
+  const row = await findMedia(env, id);
+  if (!row || row.media_type !== "video" || !row.object_key) {
+    return json(request, env, { error: "R2 video not found" }, 404);
+  }
+
+  const existing = await findStreamMigration(env, id);
+  if (existing) {
+    return json(request, env, streamMigrationJson(existing));
+  }
+
+  const sourceUrl = absoluteUrl(request, `/media/${encodeURIComponent(id)}/content`);
+  let video: AppStreamVideo;
+  try {
+    video = await env.STREAM.upload(sourceUrl, {
+      creator: "bryllup-migration",
+      meta: {
+        mediaId: row.id,
+        name: row.original_name,
+        source: "bryllup-r2",
+      },
+      requireSignedURLs: false,
+      thumbnailTimestampPct: 0.1,
+    });
+  } catch (error) {
+    if (errorName(error) === "AlreadyUploadedError") {
+      const videos = await env.STREAM.videos.list({ limit: 1000 });
+      const recovered = videos.find((candidate) => candidate.meta.mediaId === row.id);
+      if (!recovered) {
+        throw new HttpError(
+          "Stream reported a duplicate upload, but the existing video could not be found",
+          502
+        );
+      }
+      video = recovered;
+    } else {
+      const message = unknownErrorMessage(error);
+      if (/quota|storage|capacity|allocated|minutes/i.test(message)) {
+        throw new HttpError(message, 409);
+      }
+      throw new HttpError(`Stream upload failed: ${message}`, 502);
+    }
+  }
+
+  if (!video.id) {
+    throw new HttpError("Stream did not return a video ID", 502);
+  }
+
+  const now = new Date().toISOString();
+  const migrationStatus = video.readyToStream ? "ready-to-finalize" : "processing";
+  await env.DB.prepare(
+    `INSERT INTO stream_migrations (
+       media_id, stream_id, source_provider, source_object_key,
+       status, error, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)`
+  )
+    .bind(
+      row.id,
+      video.id,
+      row.provider,
+      row.object_key,
+      migrationStatus,
+      now,
+      now
+    )
+    .run();
+
+  const migration = await findStreamMigration(env, id);
+  return json(
+    request,
+    env,
+    migration ? streamMigrationJson(migration) : { error: "Migration was not saved" },
+    202
+  );
+}
+
+async function finalizeStreamMigration(
+  request: Request,
+  env: Env,
+  id: string
+): Promise<Response> {
+  if (!env.STREAM) {
+    throw new HttpError("Stream binding is not configured", 503);
+  }
+
+  const migration = await findStreamMigration(env, id);
+  if (!migration) {
+    return json(request, env, { error: "Stream migration not found" }, 404);
+  }
+
+  const video = await env.STREAM.video(migration.stream_id).details();
+  const now = new Date().toISOString();
+  const streamState = video.status.state.toLowerCase();
+  const failed = streamState === "error" || Boolean(video.status.errorReasonCode);
+
+  if (failed) {
+    const message =
+      video.status.errorReasonText || video.status.errorReasonCode || "Stream processing failed";
+    await env.DB.prepare(
+      `UPDATE stream_migrations SET status = 'error', error = ?, updated_at = ?
+       WHERE media_id = ?`
+    )
+      .bind(message, now, id)
+      .run();
+    return json(request, env, { error: message, streamId: migration.stream_id }, 422);
+  }
+
+  if (!video.readyToStream) {
+    await env.DB.prepare(
+      `UPDATE stream_migrations SET status = 'processing', error = NULL, updated_at = ?
+       WHERE media_id = ?`
+    )
+      .bind(now, id)
+      .run();
+    return json(
+      request,
+      env,
+      {
+        mediaId: id,
+        streamId: migration.stream_id,
+        status: "processing",
+        streamState: video.status.state,
+      },
+      202
+    );
+  }
+
+  await env.DB.prepare(
+    `UPDATE media
+     SET provider = 'cloudflare-stream', provider_id = ?, url = ?, thumbnail_url = ?,
+         status = 'ready', error = NULL, updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(
+      migration.stream_id,
+      streamIframeUrl(migration.stream_id),
+      video.thumbnail || streamThumbnailUrl(migration.stream_id),
+      now,
+      id
+    )
+    .run();
+
+  await env.DB.prepare(
+    `UPDATE stream_migrations SET status = 'complete', error = NULL, updated_at = ?
+     WHERE media_id = ?`
+  )
+    .bind(now, id)
+    .run();
+
+  const updated = await findMedia(env, id);
+  return json(request, env, {
+    mediaId: id,
+    streamId: migration.stream_id,
+    status: "complete",
+    video: updated ? toPublicMedia(updated, request) : undefined,
+  });
+}
+
+async function findStreamMigration(
+  env: Env,
+  mediaId: string
+): Promise<StreamMigrationRow | null> {
+  return env.DB.prepare("SELECT * FROM stream_migrations WHERE media_id = ?")
+    .bind(mediaId)
+    .first<StreamMigrationRow>();
+}
+
+function streamMigrationJson(row: StreamMigrationRow) {
+  return {
+    mediaId: row.media_id,
+    streamId: row.stream_id,
+    status: row.status,
+    error: row.error || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function errorName(error: unknown): string {
+  if (error instanceof Error) return error.name;
+  if (typeof error === "object" && error !== null && "name" in error) {
+    return String(error.name);
+  }
+  return "";
+}
+
+function unknownErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    return String(error.message);
+  }
+  if (typeof error === "string") return error;
+  return "Unexpected error";
+}
+
 function requiredUploadId(request: Request): string {
   const uploadId = new URL(request.url).searchParams.get("uploadId");
   if (!uploadId) {
@@ -1463,7 +1787,7 @@ async function getR2Content(
   disposition: "inline" | "attachment" = "inline"
 ): Promise<Response> {
   const row = await findMedia(env, id);
-  if (!row || !isR2Provider(row.provider) || !row.object_key) {
+  if (!row || !row.object_key) {
     return json(request, env, { error: "Media not found" }, 404);
   }
 
@@ -1695,11 +2019,12 @@ async function fetchStreamStatus(
 
 function toPublicMedia(row: MediaRow, request: Request) {
   const isR2 = isR2Provider(row.provider);
+  const hasR2Original = Boolean(row.object_key);
   const encodedId = encodeURIComponent(row.id);
   const r2Url = isR2
     ? absoluteUrl(request, `/media/${encodedId}/content`)
     : null;
-  const r2DownloadUrl = isR2
+  const r2DownloadUrl = hasR2Original
     ? absoluteUrl(request, `/media/${encodedId}/download`)
     : null;
   const r2ThumbnailUrl =
@@ -2002,6 +2327,23 @@ function requirePhotoArchiveUploadToken(request: Request, env: Env): void {
     throw new HttpError("Archive upload is not configured", 503);
   }
   if (request.headers.get("X-Upload-Token") !== token) {
+    throw new HttpError("Unauthorized", 401);
+  }
+}
+
+async function requireMigrationToken(request: Request, env: Env): Promise<void> {
+  if (!env.MIGRATION_TOKEN) {
+    throw new HttpError("Stream migration is not configured", 503);
+  }
+
+  const provided = request.headers.get("X-Upload-Token") || "";
+  const encoder = new TextEncoder();
+  const [providedHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(provided)),
+    crypto.subtle.digest("SHA-256", encoder.encode(env.MIGRATION_TOKEN)),
+  ]);
+  const subtle = crypto.subtle as AppSubtleCrypto;
+  if (!subtle.timingSafeEqual(providedHash, expectedHash)) {
     throw new HttpError("Unauthorized", 401);
   }
 }
