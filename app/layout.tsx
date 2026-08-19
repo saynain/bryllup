@@ -18,11 +18,11 @@ const cormorant = Cormorant({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://bryllup.rylands.no"),
-  title: "Silje & Sindre - Vi gifter oss!",
-  description: "Invitasjon til bryllupet vårt 15. august 2026",
+  title: "Silje & Sindre - Bryllupsbilder",
+  description: "Se og del bilder fra bryllupet til Silje og Sindre.",
   openGraph: {
-    title: "Silje & Sindre - Vi gifter oss!",
-    description: "Invitasjon til bryllupet vårt 15. august 2026",
+    title: "Silje & Sindre - Bryllupsbilder",
+    description: "Se og del bilder fra bryllupet til Silje og Sindre.",
     url: "https://bryllup.rylands.no",
     siteName: "Silje & Sindre",
     locale: "nb_NO",
