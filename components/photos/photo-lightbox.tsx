@@ -45,7 +45,7 @@ export function PhotoLightbox({
 
   const handleDownload = useCallback(() => {
     const link = document.createElement("a");
-    link.href = photo.url;
+    link.href = photo.downloadUrl || photo.url;
     link.download = photo.originalName || photo.filename;
     link.target = "_blank";
     document.body.appendChild(link);
@@ -218,13 +218,14 @@ export function PhotoLightbox({
                   src={photo.url}
                   poster={photo.thumbnailUrl}
                   controls
+                  preload="metadata"
                   playsInline
                   className="max-h-[calc(100dvh-8rem)] max-w-[94vw] rounded-md bg-black sm:max-h-[calc(100dvh-9rem)]"
                 />
               )
             ) : (
               <Image
-                src={photo.url}
+                src={photo.previewUrl || photo.url}
                 alt={photo.uploadedBy ? `Bilde fra ${photo.uploadedBy}` : "Bryllupsbilde"}
                 width={1200}
                 height={800}

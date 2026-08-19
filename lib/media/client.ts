@@ -56,6 +56,10 @@ export function isCloudflareMediaEnabled(): boolean {
   return Boolean(MEDIA_API_URL);
 }
 
+export function getPhotoArchiveUrl(): string | undefined {
+  return MEDIA_API_URL ? `${MEDIA_API_URL}/downloads/photos.zip` : undefined;
+}
+
 export function isRetryableUploadError(error: unknown): boolean {
   return error instanceof MediaUploadError ? error.retryable : true;
 }

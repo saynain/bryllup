@@ -13,6 +13,8 @@ export interface PhotoMetadata {
   uploadedBy?: string;
   uploadMessage?: string;
   url: string;
+  downloadUrl?: string;
+  previewUrl?: string;
   thumbnailUrl?: string;
 }
 

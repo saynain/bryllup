@@ -1,4 +1,5 @@
 name = "bryllup-media"
+account_id = "81b362ce37970cd10f656efd41e28052"
 main = "src/index.ts"
 compatibility_date = "2026-06-27"
 workers_dev = true
@@ -18,6 +19,11 @@ binding = "STREAM"
 
 [images]
 binding = "IMAGES"
+
+# Cache transformed thumbnails and previews at the edge so the Images binding
+# only performs each standardized transformation when it is first requested.
+[cache]
+enabled = true
 
 [vars]
 # Comma-separated origins allowed to call this Worker from the browser.

@@ -2,15 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { RefreshCw } from "lucide-react";
+import { Download, RefreshCw } from "lucide-react";
 import { PhotoCard } from "./photo-card";
 import { PhotoLightbox } from "./photo-lightbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { fetchMediaList } from "@/lib/media/client";
+import { fetchMediaList, getPhotoArchiveUrl } from "@/lib/media/client";
 import type { PhotoMetadata } from "@/lib/storage/types";
 
-const GALLERY_PAGE_SIZE = 100;
+const GALLERY_PAGE_SIZE = 36;
 
 interface PhotoGridProps {
   refreshTrigger?: number;
@@ -22,6 +22,7 @@ interface LoadPhotosOptions {
 }
 
 export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
+  const archiveUrl = getPhotoArchiveUrl();
   const [photos, setPhotos] = useState<PhotoMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -111,6 +112,23 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
 
   return (
     <>
+      {archiveUrl && (
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-[#E8DED0] bg-white/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div>
+            <p className="font-medium text-[#5D4E37]">Vil du beholde alle bildene?</p>
+            <p className="mt-0.5 text-sm text-[#8B7355]">
+              Last ned originalene samlet i én stor ZIP-fil. Bruk gjerne Wi-Fi.
+            </p>
+          </div>
+          <Button asChild variant="outline" className="shrink-0">
+            <a href={archiveUrl} target="_blank" rel="noreferrer">
+              <Download className="h-4 w-4" />
+              Last ned alle bilder
+            </a>
+          </Button>
+        </div>
+      )}
+
       {/* Photo grid */}
       <div className="grid grid-cols-4 gap-0.5 overflow-hidden rounded-md sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
         {photos.map((photo) => (

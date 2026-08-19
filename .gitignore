@@ -19,6 +19,7 @@
 
 # production
 /build
+/output/media-archive/
 
 # misc
 .DS_Store

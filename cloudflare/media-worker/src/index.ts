@@ -32,7 +32,7 @@ interface AppD1Database {
 }
 
 interface AppR2Object {
-  body: ReadableStream<Uint8Array> | null;
+  body?: ReadableStream<Uint8Array> | null;
   httpEtag?: string;
   size?: number;
 }
@@ -54,11 +54,16 @@ interface AppR2MultipartUpload {
 }
 
 interface AppR2Bucket {
+  head(key: string): Promise<AppR2Object | null>;
   put(
     key: string,
     value: ReadableStream<Uint8Array> | ArrayBuffer | string | null,
     options?: {
-      httpMetadata?: { contentType?: string };
+      httpMetadata?: {
+        contentType?: string;
+        contentDisposition?: string;
+        cacheControl?: string;
+      };
       customMetadata?: Record<string, string>;
     }
   ): Promise<unknown>;
@@ -71,7 +76,11 @@ interface AppR2Bucket {
   createMultipartUpload(
     key: string,
     options?: {
-      httpMetadata?: { contentType?: string };
+      httpMetadata?: {
+        contentType?: string;
+        contentDisposition?: string;
+        cacheControl?: string;
+      };
       customMetadata?: Record<string, string>;
     }
   ): Promise<AppR2MultipartUpload>;
@@ -90,7 +99,26 @@ interface HostedImageMetadata {
   variants?: string[];
 }
 
+interface AppImageTransformationResult {
+  response(options?: { headers?: HeadersInit }): Response;
+}
+
+interface AppImageTransformer {
+  transform(options: {
+    width?: number;
+    height?: number;
+    fit?: "scale-down" | "contain" | "cover" | "crop";
+    gravity?: "auto" | "center" | "entropy";
+  }): AppImageTransformer;
+  output(options: {
+    format: "image/webp";
+    quality?: number;
+    anim?: boolean;
+  }): Promise<AppImageTransformationResult>;
+}
+
 interface ImagesBinding {
+  input(stream: ReadableStream<Uint8Array>): AppImageTransformer;
   hosted?: {
     upload(
       image: ReadableStream<Uint8Array> | ArrayBuffer,
@@ -124,6 +152,7 @@ interface Env {
   STREAM_MAX_DURATION_SECONDS?: string;
   STREAM_UPLOAD_PROTOCOL?: "auto" | "form" | "tus" | "r2-multipart";
   UPLOAD_TOKEN?: string;
+  ARCHIVE_UPLOAD_TOKEN?: string;
 }
 
 interface MediaRow {
@@ -181,8 +210,12 @@ const DEFAULT_R2_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_THUMBNAIL_BYTES = 1_500_000;
 const DEFAULT_STREAM_BASIC_MAX_BYTES = 190 * 1024 * 1024;
 const DEFAULT_STREAM_MAX_DURATION_SECONDS = 60 * 60;
+const PHOTO_ARCHIVE_KEY = "archives/silje-og-sindre-bilder.zip";
+const PHOTO_ARCHIVE_FILENAME = "silje-og-sindre-bilder.zip";
+const PHOTO_ARCHIVE_PART_BYTES = 20 * 1024 * 1024;
 const IMMUTABLE_MEDIA_CACHE_CONTROL =
   "public, max-age=31536000, s-maxage=31536000, immutable";
+const PHOTO_ARCHIVE_CACHE_CONTROL = "public, max-age=3600, s-maxage=3600";
 
 export default {
   async fetch(
@@ -206,6 +239,42 @@ export default {
         return listMedia(request, env);
       }
 
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        path === "/downloads/photos.zip"
+      ) {
+        return getPhotoArchive(request, env);
+      }
+
+      if (request.method === "POST" && path === "/downloads/photos.zip/upload") {
+        requirePhotoArchiveUploadToken(request, env);
+        return createPhotoArchiveUpload(request, env);
+      }
+
+      const archivePartMatch = path.match(
+        /^\/downloads\/photos\.zip\/upload\/parts\/(\d+)$/
+      );
+      if (request.method === "PUT" && archivePartMatch) {
+        requirePhotoArchiveUploadToken(request, env);
+        return uploadPhotoArchivePart(request, env, Number(archivePartMatch[1]));
+      }
+
+      if (
+        request.method === "POST" &&
+        path === "/downloads/photos.zip/upload/complete"
+      ) {
+        requirePhotoArchiveUploadToken(request, env);
+        return completePhotoArchiveUpload(request, env);
+      }
+
+      if (
+        request.method === "DELETE" &&
+        path === "/downloads/photos.zip/upload"
+      ) {
+        requirePhotoArchiveUploadToken(request, env);
+        return abortPhotoArchiveUpload(request, env);
+      }
+
       const mediaMatch = path.match(/^\/media\/([^/]+)$/);
       if (request.method === "GET" && mediaMatch) {
         return getMedia(request, env, decodeURIComponent(mediaMatch[1]));
@@ -216,9 +285,31 @@ export default {
         return getR2Content(request, env, decodeURIComponent(contentMatch[1]), ctx);
       }
 
+      const downloadMatch = path.match(/^\/media\/([^/]+)\/download$/);
+      if (request.method === "GET" && downloadMatch) {
+        return getR2Content(
+          request,
+          env,
+          decodeURIComponent(downloadMatch[1]),
+          ctx,
+          "attachment"
+        );
+      }
+
       const thumbnailMatch = path.match(/^\/media\/([^/]+)\/thumbnail$/);
       if (request.method === "GET" && thumbnailMatch) {
         return getR2Thumbnail(request, env, decodeURIComponent(thumbnailMatch[1]), ctx);
+      }
+
+      const previewMatch = path.match(/^\/media\/([^/]+)\/preview$/);
+      if (request.method === "GET" && previewMatch) {
+        return getR2ImageVariant(
+          request,
+          env,
+          decodeURIComponent(previewMatch[1]),
+          "preview",
+          ctx
+        );
       }
 
       if (request.method === "POST" && path === "/uploads") {
@@ -1228,11 +1319,148 @@ async function completeUpload(request: Request, env: Env, id: string): Promise<R
   return json(request, env, toPublicMedia(updated || row, request));
 }
 
+async function getPhotoArchive(request: Request, env: Env): Promise<Response> {
+  const rangeHeader = request.headers.get("Range");
+  const metadata = await env.MEDIA_BUCKET.head(PHOTO_ARCHIVE_KEY);
+  if (!metadata || !metadata.size) {
+    return json(request, env, { error: "Photo archive is not ready" }, 404);
+  }
+
+  const range = parseRangeHeader(rangeHeader, metadata.size);
+  const headers = cacheableMediaHeaders(request, env);
+  headers.set("Content-Type", "application/zip");
+  headers.set(
+    "Content-Disposition",
+    `attachment; filename="${PHOTO_ARCHIVE_FILENAME}"`
+  );
+  headers.set("Cache-Control", PHOTO_ARCHIVE_CACHE_CONTROL);
+  headers.set("Accept-Ranges", "bytes");
+  headers.set(
+    "Content-Length",
+    String(range ? range.end - range.start + 1 : metadata.size)
+  );
+  if (metadata.httpEtag) {
+    headers.set("ETag", metadata.httpEtag);
+  }
+  if (range) {
+    headers.set("Content-Range", `bytes ${range.start}-${range.end}/${metadata.size}`);
+  }
+
+  if (request.method === "HEAD") {
+    return new Response(null, { headers });
+  }
+
+  const object = await env.MEDIA_BUCKET.get(
+    PHOTO_ARCHIVE_KEY,
+    range
+      ? {
+          range: {
+            offset: range.start,
+            length: range.end - range.start + 1,
+          },
+        }
+      : undefined
+  );
+  if (!object?.body) {
+    return json(request, env, { error: "Photo archive is not ready" }, 404);
+  }
+
+  return new Response(object.body, { status: range ? 206 : 200, headers });
+}
+
+async function createPhotoArchiveUpload(request: Request, env: Env): Promise<Response> {
+  const upload = await env.MEDIA_BUCKET.createMultipartUpload(PHOTO_ARCHIVE_KEY, {
+    httpMetadata: {
+      contentType: "application/zip",
+      contentDisposition: `attachment; filename="${PHOTO_ARCHIVE_FILENAME}"`,
+      cacheControl: PHOTO_ARCHIVE_CACHE_CONTROL,
+    },
+    customMetadata: {
+      source: "bryllup-photo-archive",
+    },
+  });
+
+  const uploadId = encodeURIComponent(upload.uploadId);
+  return json(request, env, {
+    uploadId: upload.uploadId,
+    partSize: PHOTO_ARCHIVE_PART_BYTES,
+    uploadPartsUrl: absoluteUrl(request, "/downloads/photos.zip/upload/parts"),
+    completeUrl: absoluteUrl(
+      request,
+      `/downloads/photos.zip/upload/complete?uploadId=${uploadId}`
+    ),
+    abortUrl: absoluteUrl(
+      request,
+      `/downloads/photos.zip/upload?uploadId=${uploadId}`
+    ),
+  });
+}
+
+async function uploadPhotoArchivePart(
+  request: Request,
+  env: Env,
+  partNumber: number
+): Promise<Response> {
+  const uploadId = requiredUploadId(request);
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > 10000) {
+    return json(request, env, { error: "Invalid part number" }, 400);
+  }
+  if (!request.body) {
+    return json(request, env, { error: "Missing request body" }, 400);
+  }
+
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(PHOTO_ARCHIVE_KEY, uploadId);
+  const part = await upload.uploadPart(partNumber, request.body);
+  return json(request, env, part);
+}
+
+async function completePhotoArchiveUpload(request: Request, env: Env): Promise<Response> {
+  const uploadId = requiredUploadId(request);
+  const body = (await request.json()) as { parts?: AppR2UploadedPart[] };
+  const parts = (body.parts || [])
+    .filter(
+      (part) =>
+        Number.isInteger(part.partNumber) &&
+        part.partNumber > 0 &&
+        typeof part.etag === "string" &&
+        part.etag.length > 0
+    )
+    .sort((a, b) => a.partNumber - b.partNumber);
+
+  if (parts.length === 0) {
+    return json(request, env, { error: "Missing uploaded parts" }, 400);
+  }
+
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(PHOTO_ARCHIVE_KEY, uploadId);
+  const object = await upload.complete(parts);
+  return json(request, env, {
+    ok: true,
+    key: object.key || PHOTO_ARCHIVE_KEY,
+    downloadUrl: absoluteUrl(request, "/downloads/photos.zip"),
+  });
+}
+
+async function abortPhotoArchiveUpload(request: Request, env: Env): Promise<Response> {
+  const uploadId = requiredUploadId(request);
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(PHOTO_ARCHIVE_KEY, uploadId);
+  await upload.abort();
+  return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+}
+
+function requiredUploadId(request: Request): string {
+  const uploadId = new URL(request.url).searchParams.get("uploadId");
+  if (!uploadId) {
+    throw new HttpError("Missing upload ID", 400);
+  }
+  return uploadId;
+}
+
 async function getR2Content(
   request: Request,
   env: Env,
   id: string,
-  ctx?: AppExecutionContext
+  ctx?: AppExecutionContext,
+  disposition: "inline" | "attachment" = "inline"
 ): Promise<Response> {
   const row = await findMedia(env, id);
   if (!row || !isR2Provider(row.provider) || !row.object_key) {
@@ -1271,7 +1499,10 @@ async function getR2Content(
   if (shouldCacheWholeImage) {
     headers.set("X-Bryllup-Cache", "MISS");
   }
-  headers.set("Content-Disposition", `inline; filename="${row.filename}"`);
+  headers.set(
+    "Content-Disposition",
+    `${disposition}; filename="${sanitizeDownloadFilename(row.original_name || row.filename)}"`
+  );
   headers.set("Accept-Ranges", "bytes");
   headers.set("Content-Length", String(range ? range.end - range.start + 1 : row.size));
   if (range) {
@@ -1296,7 +1527,15 @@ async function getR2Thumbnail(
   ctx?: AppExecutionContext
 ): Promise<Response> {
   const row = await findMedia(env, id);
-  if (!row || row.media_type !== "video" || !row.thumbnail_url) {
+  if (!row) {
+    return json(request, env, { error: "Thumbnail not found" }, 404);
+  }
+
+  if (row.media_type === "image") {
+    return getR2ImageVariant(request, env, id, "thumbnail", ctx, row);
+  }
+
+  if (!row.thumbnail_url) {
     return json(request, env, { error: "Thumbnail not found" }, 404);
   }
 
@@ -1322,6 +1561,69 @@ async function getR2Thumbnail(
   }
 
   const response = new Response(object.body, { headers });
+  cacheImmutableMediaResponse(request, response, ctx);
+  return response;
+}
+
+async function getR2ImageVariant(
+  request: Request,
+  env: Env,
+  id: string,
+  variant: "thumbnail" | "preview",
+  ctx?: AppExecutionContext,
+  knownRow?: MediaRow
+): Promise<Response> {
+  const cached = await matchImmutableMediaCache(request);
+  if (cached) {
+    return cached;
+  }
+
+  const row = knownRow || (await findMedia(env, id));
+  if (
+    !row ||
+    row.media_type !== "image" ||
+    !isR2Provider(row.provider) ||
+    !row.object_key ||
+    !env.IMAGES
+  ) {
+    return json(request, env, { error: "Image variant is not available" }, 404);
+  }
+
+  const object = await env.MEDIA_BUCKET.get(row.object_key);
+  if (!object?.body) {
+    return json(request, env, { error: "Image not found" }, 404);
+  }
+
+  const transformer = env.IMAGES.input(object.body);
+  const transformed =
+    variant === "thumbnail"
+      ? await transformer
+          .transform({
+            width: 480,
+            height: 480,
+            fit: "cover",
+            gravity: "auto",
+          })
+          .output({ format: "image/webp", quality: 72, anim: false })
+      : await transformer
+          .transform({
+            width: 1600,
+            height: 1600,
+            fit: "scale-down",
+          })
+          .output({ format: "image/webp", quality: 82, anim: false });
+
+  const imageResponse = transformed.response();
+  const headers = cacheableMediaHeaders(request, env);
+  headers.set("Content-Type", imageResponse.headers.get("Content-Type") || "image/webp");
+  headers.set("Cache-Control", IMMUTABLE_MEDIA_CACHE_CONTROL);
+  headers.set("X-Bryllup-Cache", "MISS");
+  const contentLength = imageResponse.headers.get("Content-Length");
+  if (contentLength) {
+    headers.set("Content-Length", contentLength);
+  }
+
+  const response = new Response(imageResponse.body, { headers });
   cacheImmutableMediaResponse(request, response, ctx);
   return response;
 }
@@ -1392,9 +1694,21 @@ async function fetchStreamStatus(
 }
 
 function toPublicMedia(row: MediaRow, request: Request) {
-  const r2Url =
-    isR2Provider(row.provider)
-      ? absoluteUrl(request, `/media/${encodeURIComponent(row.id)}/content`)
+  const isR2 = isR2Provider(row.provider);
+  const encodedId = encodeURIComponent(row.id);
+  const r2Url = isR2
+    ? absoluteUrl(request, `/media/${encodedId}/content`)
+    : null;
+  const r2DownloadUrl = isR2
+    ? absoluteUrl(request, `/media/${encodedId}/download`)
+    : null;
+  const r2ThumbnailUrl =
+    isR2 && row.media_type === "image"
+      ? absoluteUrl(request, `/media/${encodedId}/thumbnail`)
+      : null;
+  const r2PreviewUrl =
+    isR2 && row.media_type === "image"
+      ? absoluteUrl(request, `/media/${encodedId}/preview`)
       : null;
 
   return {
@@ -1411,7 +1725,12 @@ function toPublicMedia(row: MediaRow, request: Request) {
     uploadedBy: row.uploaded_by || undefined,
     uploadMessage: row.upload_message || undefined,
     url: row.url || r2Url,
-    thumbnailUrl: row.thumbnail_url || (row.media_type === "image" ? row.url || r2Url : undefined),
+    downloadUrl: r2DownloadUrl || row.url || undefined,
+    previewUrl: r2PreviewUrl || (row.media_type === "image" ? row.url || undefined : undefined),
+    thumbnailUrl:
+      r2ThumbnailUrl ||
+      row.thumbnail_url ||
+      (row.media_type === "image" ? row.url || r2Url : undefined),
   };
 }
 
@@ -1477,6 +1796,13 @@ function sanitizeFilename(filename: string): string {
   const base = filename.split(/[\\/]/).pop()?.trim() || "";
   const safe = base.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/_+/g, "_");
   return safe.slice(0, 160) || `upload-${Date.now()}`;
+}
+
+function sanitizeDownloadFilename(filename: string): string {
+  return filename
+    .replace(/[\r\n"\\/]/g, "_")
+    .replace(/[^a-zA-Z0-9._ -]/g, "_")
+    .slice(0, 180);
 }
 
 function sanitizeOptionalText(value: unknown, maxLength: number): string | null {
@@ -1667,6 +1993,16 @@ function requireUploadToken(request: Request, env: Env): void {
 
   if (request.headers.get("X-Upload-Token") !== env.UPLOAD_TOKEN) {
     throw new HttpError("Invalid upload token", 401);
+  }
+}
+
+function requirePhotoArchiveUploadToken(request: Request, env: Env): void {
+  const token = env.ARCHIVE_UPLOAD_TOKEN || env.UPLOAD_TOKEN;
+  if (!token) {
+    throw new HttpError("Archive upload is not configured", 503);
+  }
+  if (request.headers.get("X-Upload-Token") !== token) {
+    throw new HttpError("Unauthorized", 401);
   }
 }
 

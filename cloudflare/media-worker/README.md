@@ -6,8 +6,9 @@ site continues to run on Vercel.
 ## Architecture
 
 - D1 stores media metadata and gallery pagination state.
-- Cloudflare Images hosted upload is used for photos through the Images binding.
-- R2 stores original files and is the fallback backend for large videos.
+- R2 stores photo originals. The Images binding creates cached 480 px WebP
+  thumbnails and 1600 px WebP previews when they are first requested.
+- R2 is also the fallback backend for large videos.
 - Video uploads use Cloudflare Stream when REST credentials or the Stream
   binding can create a direct upload. R2 multipart is the fallback for larger
   files and Stream failures. Large speeches are uploaded in 5 MiB retryable
@@ -52,3 +53,18 @@ Set this on Vercel after deployment:
 ```bash
 NEXT_PUBLIC_MEDIA_API_URL=https://bryllup-media.<your-subdomain>.workers.dev
 ```
+
+## Samlet bildenedlasting
+
+Worker-endepunktet `/downloads/photos.zip` strømmer et ferdig ZIP-arkiv fra R2.
+Bygg og last opp et nytt arkiv etter at galleriet er oppdatert:
+
+```bash
+pnpm cf:media:archive
+```
+
+Kommandoen henter bare originalbilder (ikke videoer), lager ZIP-filen lokalt under
+`output/media-archive/`, og laster den opp til R2 i 20 MiB-deler. Den bruker
+`NEXT_PUBLIC_MEDIA_API_URL` fra `.env.local`. Hvis et lokalt opplastingstoken ikke
+finnes, oppretter den et separat `ARCHIVE_UPLOAD_TOKEN` som en Worker-hemmelighet;
+tokenet blir bare holdt i minnet mens arkivet lastes opp.
