@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useCallback, useRef, type TouchEvent } from "react";
+import { useEffect, useCallback, useRef, useState, type TouchEvent } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Download, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PhotoMetadata } from "@/lib/storage/types";
 
@@ -12,6 +12,27 @@ interface PhotoLightboxProps {
   photos: PhotoMetadata[];
   onClose: () => void;
   onNavigate: (photo: PhotoMetadata) => void;
+}
+
+const preloadedMediaUrls = new Set<string>();
+const mediaPreloadsInFlight = new Map<string, HTMLImageElement>();
+
+function preloadMediaImage(url: string) {
+  if (preloadedMediaUrls.has(url) || mediaPreloadsInFlight.has(url)) {
+    return;
+  }
+
+  const image = new window.Image();
+  image.decoding = "async";
+  image.fetchPriority = "low";
+  mediaPreloadsInFlight.set(url, image);
+
+  image.onload = () => {
+    preloadedMediaUrls.add(url);
+    mediaPreloadsInFlight.delete(url);
+  };
+  image.onerror = () => mediaPreloadsInFlight.delete(url);
+  image.src = url;
 }
 
 export function PhotoLightbox({
@@ -107,6 +128,29 @@ export function PhotoLightbox({
       document.body.style.overflow = "";
     };
   }, [onClose, handlePrev, handleNext]);
+
+  useEffect(() => {
+    const saveData = (
+      navigator as Navigator & { connection?: { saveData?: boolean } }
+    ).connection?.saveData;
+    const neighborOffsets = saveData ? [1] : [1, 2, -1];
+
+    for (const offset of neighborOffsets) {
+      const neighbor = photos[currentIndex + offset];
+      if (!neighbor) {
+        continue;
+      }
+
+      const preloadUrl =
+        neighbor.mediaType === "video"
+          ? neighbor.thumbnailUrl
+          : neighbor.previewUrl || neighbor.url;
+
+      if (preloadUrl) {
+        preloadMediaImage(preloadUrl);
+      }
+    }
+  }, [currentIndex, photos]);
 
   return (
     <AnimatePresence>
@@ -206,13 +250,7 @@ export function PhotoLightbox({
           >
             {isVideo ? (
               useStreamEmbed ? (
-                <iframe
-                  src={photo.url}
-                  title={photo.uploadedBy ? `Video fra ${photo.uploadedBy}` : "Bryllupsvideo"}
-                  className="aspect-video max-h-[calc(100dvh-8rem)] w-[94vw] max-w-5xl rounded-md bg-black sm:max-h-[calc(100dvh-9rem)]"
-                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
-                  allowFullScreen
-                />
+                <StreamPlayer photo={photo} />
               ) : (
                 <video
                   src={photo.url}
@@ -269,6 +307,45 @@ export function PhotoLightbox({
         </div>
       </motion.div>
     </AnimatePresence>
+  );
+}
+
+function StreamPlayer({ photo }: { photo: PhotoMetadata }) {
+  const [isReady, setIsReady] = useState(false);
+
+  return (
+    <div className="relative aspect-video max-h-[calc(100dvh-8rem)] w-[94vw] max-w-5xl overflow-hidden rounded-md bg-black sm:max-h-[calc(100dvh-9rem)]">
+      {photo.thumbnailUrl && (
+        <Image
+          src={photo.thumbnailUrl}
+          alt=""
+          aria-hidden="true"
+          fill
+          sizes="(max-width: 640px) 94vw, 1024px"
+          className={`object-cover transition-opacity duration-200 ${
+            isReady ? "opacity-0" : "opacity-70"
+          }`}
+          unoptimized
+        />
+      )}
+      {!isReady && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center text-white">
+          <LoaderCircle className="h-8 w-8 animate-spin drop-shadow" aria-hidden="true" />
+          <span className="sr-only">Laster video</span>
+        </div>
+      )}
+      <iframe
+        src={photo.url}
+        title={photo.uploadedBy ? `Video fra ${photo.uploadedBy}` : "Bryllupsvideo"}
+        className={`absolute inset-0 h-full w-full bg-black transition-opacity duration-200 ${
+          isReady ? "opacity-100" : "opacity-0"
+        }`}
+        loading="eager"
+        allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+        allowFullScreen
+        onLoad={() => setIsReady(true)}
+      />
+    </div>
   );
 }
 

@@ -60,6 +60,31 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   }, []);
 
   useEffect(() => {
+    const origins = [
+      "https://iframe.videodelivery.net",
+      "https://videodelivery.net",
+    ];
+    const createdHints: HTMLLinkElement[] = [];
+
+    for (const origin of origins) {
+      const alreadyExists = Array.from(
+        document.head.querySelectorAll<HTMLLinkElement>('link[rel="preconnect"]')
+      ).some((link) => link.href === `${origin}/`);
+
+      if (!alreadyExists) {
+        const link = document.createElement("link");
+        link.rel = "preconnect";
+        link.href = origin;
+        link.crossOrigin = "anonymous";
+        document.head.appendChild(link);
+        createdHints.push(link);
+      }
+    }
+
+    return () => createdHints.forEach((link) => link.remove());
+  }, []);
+
+  useEffect(() => {
     setCursor(undefined);
     setHasMore(false);
     loadPhotos();
