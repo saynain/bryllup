@@ -34,6 +34,7 @@ import {
 import type { PhotoMetadata } from "@/lib/storage/types";
 
 type AdminMode = "delete" | "order";
+type MultiMovePhase = "off" | "select" | "place";
 
 export function PhotoAdmin() {
   const [password, setPassword] = useState("");
@@ -43,6 +44,8 @@ export function PhotoAdmin() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoMetadata | null>(null);
   const [activeMoveId, setActiveMoveId] = useState<string | null>(null);
+  const [multiMovePhase, setMultiMovePhase] = useState<MultiMovePhase>("off");
+  const [selectedMoveIds, setSelectedMoveIds] = useState<Set<string>>(() => new Set());
   const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
   const [movePosition, setMovePosition] = useState("");
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -60,6 +63,8 @@ export function PhotoAdmin() {
     setSelectedIds(new Set());
     setSelectedPhoto(null);
     setActiveMoveId(null);
+    setMultiMovePhase("off");
+    setSelectedMoveIds(new Set());
     setMoveTargetId(null);
     setMovePosition("");
     setIsDirty(false);
@@ -102,6 +107,8 @@ export function PhotoAdmin() {
     setNotice(null);
     setSelectedIds(new Set());
     setActiveMoveId(null);
+    setMultiMovePhase("off");
+    setSelectedMoveIds(new Set());
     setMoveTargetId(null);
     setMovePosition("");
     setMode(nextMode);
@@ -122,6 +129,24 @@ export function PhotoAdmin() {
     if (activeMoveId === id) setMovePosition(String(toIndex + 1));
   };
 
+  const movePhotoGroup = (requestedIndex: number) => {
+    const movingPhotos = photos.filter((photo) => selectedMoveIds.has(photo.id));
+    if (movingPhotos.length === 0) return;
+
+    const remainingPhotos = photos.filter((photo) => !selectedMoveIds.has(photo.id));
+    const toIndex = Math.max(0, Math.min(requestedIndex, remainingPhotos.length));
+    const next = [...remainingPhotos];
+    next.splice(toIndex, 0, ...movingPhotos);
+
+    const changed = next.some((photo, index) => photo.id !== photos[index]?.id);
+    if (changed) {
+      setPhotos(next);
+      setIsDirty(true);
+      setNotice(null);
+    }
+    setMovePosition(String(toIndex + 1));
+  };
+
   const chooseMovePhoto = (id: string) => {
     const index = photos.findIndex((photo) => photo.id === id);
     setActiveMoveId(id);
@@ -130,7 +155,56 @@ export function PhotoAdmin() {
     setError(null);
   };
 
+  const startMultiMove = () => {
+    setSelectedMoveIds(activeMoveId ? new Set([activeMoveId]) : new Set());
+    setMultiMovePhase("select");
+    setActiveMoveId(null);
+    setMoveTargetId(null);
+    setMovePosition("");
+    setError(null);
+    setNotice(null);
+  };
+
+  const toggleMoveSelected = (id: string) => {
+    setSelectedMoveIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setError(null);
+    setNotice(null);
+  };
+
+  const continueMultiMove = () => {
+    if (selectedMoveIds.size === 0) {
+      setError("Marker minst ett bilde som skal flyttes.");
+      return;
+    }
+    const firstSelectedIndex = photos.findIndex((photo) => selectedMoveIds.has(photo.id));
+    setMultiMovePhase("place");
+    setMoveTargetId(null);
+    setMovePosition(firstSelectedIndex >= 0 ? String(firstSelectedIndex + 1) : "");
+    setError(null);
+  };
+
+  const editMultiSelection = () => {
+    setMultiMovePhase("select");
+    setMoveTargetId(null);
+    setError(null);
+  };
+
   const chooseMoveTarget = (id: string) => {
+    if (multiMovePhase === "select") {
+      toggleMoveSelected(id);
+      return;
+    }
+    if (multiMovePhase === "place") {
+      if (selectedMoveIds.has(id)) return;
+      setMoveTargetId(id);
+      setError(null);
+      return;
+    }
     if (!activeMoveId) {
       chooseMovePhoto(id);
       return;
@@ -142,12 +216,24 @@ export function PhotoAdmin() {
 
   const cancelMove = () => {
     setActiveMoveId(null);
+    setMultiMovePhase("off");
+    setSelectedMoveIds(new Set());
     setMoveTargetId(null);
     setMovePosition("");
     setError(null);
   };
 
   const moveAroundTarget = (placement: "before" | "after") => {
+    if (multiMovePhase === "place") {
+      if (!moveTargetId || selectedMoveIds.has(moveTargetId)) return;
+      const remainingPhotos = photos.filter((photo) => !selectedMoveIds.has(photo.id));
+      const targetIndex = remainingPhotos.findIndex((photo) => photo.id === moveTargetId);
+      if (targetIndex < 0) return;
+      movePhotoGroup(targetIndex + (placement === "after" ? 1 : 0));
+      setMoveTargetId(null);
+      setError(null);
+      return;
+    }
     if (!activeMoveId || !moveTargetId) return;
 
     const sourceIndex = photos.findIndex((photo) => photo.id === activeMoveId);
@@ -173,10 +259,10 @@ export function PhotoAdmin() {
     setNotice(null);
   };
 
-  const parseMovePosition = () => {
+  const parseMovePosition = (maxPosition = photos.length) => {
     const position = Number.parseInt(movePosition, 10);
-    if (!Number.isFinite(position) || position < 1 || position > photos.length) {
-      setError(`Velg en plassering mellom 1 og ${photos.length}.`);
+    if (!Number.isFinite(position) || position < 1 || position > maxPosition) {
+      setError(`Velg en plassering mellom 1 og ${maxPosition}.`);
       return null;
     }
     setError(null);
@@ -184,19 +270,30 @@ export function PhotoAdmin() {
   };
 
   const jumpToEnteredPosition = () => {
-    const position = parseMovePosition();
+    const maxPosition = multiMovePhase === "place"
+      ? photos.length - selectedMoveIds.size + 1
+      : photos.length;
+    const position = parseMovePosition(maxPosition);
     if (position === null) return;
     document.getElementById(`admin-photo-${position}`)?.scrollIntoView({
-      behavior: "smooth",
+      behavior: "auto",
       block: "center",
     });
   };
 
   const moveToEnteredPosition = () => {
-    if (!activeMoveId) return;
-    const position = parseMovePosition();
+    const maxPosition = multiMovePhase === "place"
+      ? photos.length - selectedMoveIds.size + 1
+      : photos.length;
+    const position = parseMovePosition(maxPosition);
     if (position === null) return;
-    movePhoto(activeMoveId, position - 1);
+    if (multiMovePhase === "place") {
+      movePhotoGroup(position - 1);
+    } else if (activeMoveId) {
+      movePhoto(activeMoveId, position - 1);
+    } else {
+      return;
+    }
     setMovePosition(String(position));
     setMoveTargetId(null);
   };
@@ -274,11 +371,22 @@ export function PhotoAdmin() {
     setIsReadOnly(false);
     setIsDirty(false);
     setActiveMoveId(null);
+    setMultiMovePhase("off");
+    setSelectedMoveIds(new Set());
     setMoveTargetId(null);
     setMovePosition("");
     setError(null);
     setNotice(null);
   };
+
+  const activeMoveIds = multiMovePhase === "place"
+    ? photos.filter((photo) => selectedMoveIds.has(photo.id)).map((photo) => photo.id)
+    : activeMoveId
+      ? [activeMoveId]
+      : [];
+  const maxMovePosition = multiMovePhase === "place"
+    ? photos.length - selectedMoveIds.size + 1
+    : photos.length;
 
   if (!adminToken) {
     return (
@@ -360,26 +468,48 @@ export function PhotoAdmin() {
                 Slett valgte{selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}
               </Button>
             ) : (
-              <Button onClick={handleSaveOrder} disabled={!isDirty || isLoading}>
-                {isLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Lagre rekkefølge
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={multiMovePhase === "off" ? startMultiMove : editMultiSelection}
+                  disabled={isLoading}
+                >
+                  <Check className="h-4 w-4" />
+                  {multiMovePhase === "off" ? "Marker flere" : `Valgt (${selectedMoveIds.size})`}
+                </Button>
+                <Button onClick={handleSaveOrder} disabled={!isDirty || isLoading}>
+                  {isLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Lagre rekkefølge
+                </Button>
+              </>
             )}
           </div>
         </div>
 
-        {mode === "order" && activeMoveId && (
+        {mode === "order" && multiMovePhase === "select" && (
+          <MultiSelectControls
+            className="mt-3 hidden border-t border-[#E8DED0] pt-3 sm:flex"
+            selectedCount={selectedMoveIds.size}
+            onContinue={continueMultiMove}
+            onCancel={cancelMove}
+          />
+        )}
+
+        {mode === "order" && activeMoveIds.length > 0 && (
           <MoveControls
             className="mt-3 hidden border-t border-[#E8DED0] pt-3 sm:flex"
             photos={photos}
-            activeMoveId={activeMoveId}
+            activeMoveIds={activeMoveIds}
             moveTargetId={moveTargetId}
             movePosition={movePosition}
+            maxMovePosition={maxMovePosition}
             onMovePositionChange={setMovePosition}
             onJump={jumpToEnteredPosition}
             onMoveToPosition={moveToEnteredPosition}
             onPlaceBefore={() => moveAroundTarget("before")}
             onPlaceAfter={() => moveAroundTarget("after")}
+            onEditSelection={multiMovePhase === "place" ? editMultiSelection : undefined}
             onCancel={cancelMove}
           />
         )}
@@ -389,9 +519,13 @@ export function PhotoAdmin() {
         <p className="mb-4 text-sm text-[#8B7355]">Trykk på bilder for å markere dem. Bruk øyet for å se et bilde i full størrelse.</p>
       ) : (
         <p className="mb-4 text-sm text-[#8B7355]">
-          {activeMoveId
-            ? "Finn stedet i albumet og trykk på et annet bilde. Velg deretter om bildet skal plasseres før eller etter."
-            : "Trykk på bildet du vil flytte. På datamaskin kan du også dra bilder direkte."}
+          {multiMovePhase === "select"
+            ? "Trykk på alle bildene du vil flytte samlet. De beholder rekkefølgen seg imellom."
+            : multiMovePhase === "place"
+              ? "Skriv inn startplasseringen, eller trykk på et annet bilde og plasser gruppen før eller etter."
+              : activeMoveId
+                ? "Finn stedet i albumet og trykk på et annet bilde. Velg deretter om bildet skal plasseres før eller etter."
+                : "Trykk på ett bilde for å flytte det, eller bruk «Marker flere» for å flytte en hel gruppe."}
         </p>
       )}
 
@@ -414,7 +548,7 @@ export function PhotoAdmin() {
           Albumet er tomt
         </div>
       ) : (
-        <div className={`grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 ${mode === "order" && activeMoveId ? "pb-56 sm:pb-0" : ""}`}>
+        <div className={`grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 ${mode === "order" && (activeMoveId || multiMovePhase !== "off") ? "pb-56 sm:pb-0" : ""}`}>
           {photos.map((photo, index) => (
             <AdminPhotoTile
               key={photo.id}
@@ -423,8 +557,11 @@ export function PhotoAdmin() {
               mode={mode}
               isSelected={selectedIds.has(photo.id)}
               isMoveActive={activeMoveId === photo.id}
+              isMultiSelecting={multiMovePhase === "select"}
+              isMultiSelected={selectedMoveIds.has(photo.id)}
               isMoveTarget={moveTargetId === photo.id}
               isDragging={draggedId === photo.id}
+              canDrag={multiMovePhase === "off"}
               onToggle={() => toggleSelected(photo.id)}
               onPreview={() => setSelectedPhoto(photo)}
               onChooseMove={() => chooseMoveTarget(photo.id)}
@@ -441,18 +578,29 @@ export function PhotoAdmin() {
         </div>
       )}
 
-      {mode === "order" && activeMoveId && (
+      {mode === "order" && multiMovePhase === "select" && (
+        <MultiSelectControls
+          className="fixed inset-x-0 bottom-0 z-40 flex border-t border-[#D8C9B7] bg-white/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(93,78,55,0.14)] backdrop-blur sm:hidden"
+          selectedCount={selectedMoveIds.size}
+          onContinue={continueMultiMove}
+          onCancel={cancelMove}
+        />
+      )}
+
+      {mode === "order" && activeMoveIds.length > 0 && (
         <MoveControls
           className="fixed inset-x-0 bottom-0 z-40 flex border-t border-[#D8C9B7] bg-white/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(93,78,55,0.14)] backdrop-blur sm:hidden"
           photos={photos}
-          activeMoveId={activeMoveId}
+          activeMoveIds={activeMoveIds}
           moveTargetId={moveTargetId}
           movePosition={movePosition}
+          maxMovePosition={maxMovePosition}
           onMovePositionChange={setMovePosition}
           onJump={jumpToEnteredPosition}
           onMoveToPosition={moveToEnteredPosition}
           onPlaceBefore={() => moveAroundTarget("before")}
           onPlaceAfter={() => moveAroundTarget("after")}
+          onEditSelection={multiMovePhase === "place" ? editMultiSelection : undefined}
           onCancel={cancelMove}
         />
       )}
@@ -475,8 +623,11 @@ function AdminPhotoTile({
   mode,
   isSelected,
   isMoveActive,
+  isMultiSelecting,
+  isMultiSelected,
   isMoveTarget,
   isDragging,
+  canDrag,
   onToggle,
   onPreview,
   onChooseMove,
@@ -491,8 +642,11 @@ function AdminPhotoTile({
   mode: AdminMode;
   isSelected: boolean;
   isMoveActive: boolean;
+  isMultiSelecting: boolean;
+  isMultiSelected: boolean;
   isMoveTarget: boolean;
   isDragging: boolean;
+  canDrag: boolean;
   onToggle: () => void;
   onPreview: () => void;
   onChooseMove: () => void;
@@ -506,15 +660,15 @@ function AdminPhotoTile({
   return (
     <div
       id={`admin-photo-${index + 1}`}
-      className={`group relative overflow-hidden rounded-lg border-2 bg-[#E8DED0] transition [contain-intrinsic-size:0_120px] [content-visibility:auto] ${isSelected || isMoveActive ? "border-[#5D4E37] ring-2 ring-[#5D4E37]/20" : isMoveTarget ? "border-amber-500 ring-2 ring-amber-400/30" : "border-transparent"} ${isDragging ? "opacity-40" : "opacity-100"}`}
-      draggable={mode === "order"}
+      className={`group relative overflow-hidden rounded-lg border-2 bg-[#E8DED0] transition [contain-intrinsic-size:0_120px] [content-visibility:auto] ${isSelected || isMoveActive || isMultiSelected ? "border-[#5D4E37] ring-2 ring-[#5D4E37]/20" : isMoveTarget ? "border-amber-500 ring-2 ring-amber-400/30" : "border-transparent"} ${isDragging ? "opacity-40" : "opacity-100"}`}
+      draggable={mode === "order" && canDrag}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
         onDragStart();
       }}
       onDragEnd={onDragEnd}
       onDragOver={(event) => {
-        if (mode === "order") event.preventDefault();
+        if (mode === "order" && canDrag) event.preventDefault();
       }}
       onDrop={(event) => {
         event.preventDefault();
@@ -525,8 +679,14 @@ function AdminPhotoTile({
         type="button"
         className="relative block aspect-square w-full overflow-hidden text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5D4E37]"
         onClick={mode === "delete" ? onToggle : onChooseMove}
-        aria-pressed={mode === "delete" ? isSelected : isMoveActive}
-        aria-label={mode === "delete" ? `Velg bilde ${index + 1}` : `Velg bilde ${index + 1} for flytting`}
+        aria-pressed={mode === "delete" ? isSelected : isMultiSelecting || isMultiSelected ? isMultiSelected : isMoveActive}
+        aria-label={mode === "delete"
+          ? `Velg bilde ${index + 1}`
+          : isMultiSelecting
+            ? `${isMultiSelected ? "Fjern markering av" : "Marker"} bilde ${index + 1}`
+            : isMultiSelected
+              ? `Valgt bilde ${index + 1}`
+            : `Velg bilde ${index + 1} for flytting`}
       >
         <img
           src={photo.thumbnailUrl || photo.url}
@@ -543,12 +703,17 @@ function AdminPhotoTile({
             {isSelected && <Check className="h-4 w-4" />}
           </span>
         )}
-        {mode === "order" && (
+        {mode === "order" && !isMultiSelecting && !isMultiSelected && (
           <span className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white">
             <GripVertical className="h-4 w-4" />
           </span>
         )}
-        {mode === "order" && isMoveActive && (
+        {mode === "order" && (isMultiSelecting || isMultiSelected) && (
+          <span className={`absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full border-2 text-white ${isMultiSelected ? "border-white bg-[#5D4E37]" : "border-white/90 bg-black/35"}`}>
+            {isMultiSelected && <Check className="h-4 w-4" />}
+          </span>
+        )}
+        {mode === "order" && isMoveActive && !isMultiSelected && (
           <span className="absolute inset-x-1.5 bottom-1.5 rounded-md bg-[#5D4E37]/90 px-1.5 py-1 text-center text-[11px] font-semibold text-white sm:hidden">
             Flyttes
           </span>
@@ -556,6 +721,11 @@ function AdminPhotoTile({
         {mode === "order" && isMoveTarget && (
           <span className="absolute inset-x-1.5 bottom-1.5 rounded-md bg-amber-500/95 px-1.5 py-1 text-center text-[11px] font-semibold text-white">
             Nytt sted
+          </span>
+        )}
+        {mode === "order" && isMultiSelected && (
+          <span className="absolute inset-x-1.5 bottom-1.5 rounded-md bg-[#5D4E37]/90 px-1.5 py-1 text-center text-[11px] font-semibold text-white">
+            Valgt
           </span>
         )}
       </button>
@@ -569,7 +739,7 @@ function AdminPhotoTile({
         <Eye className="h-4 w-4" />
       </button>
 
-      {mode === "order" && isMoveActive && (
+      {mode === "order" && isMoveActive && !isMultiSelected && (
         <div className="absolute inset-x-1.5 bottom-1.5 left-1.5 hidden w-fit gap-1 rounded-full bg-black/65 p-0.5 sm:flex">
           <button type="button" className="flex h-7 w-7 items-center justify-center rounded-full text-white disabled:opacity-30" onClick={onMovePrevious} disabled={index === 0} aria-label="Flytt én plass bakover">
             <ChevronLeft className="h-4 w-4" />
@@ -586,50 +756,66 @@ function AdminPhotoTile({
 function MoveControls({
   className,
   photos,
-  activeMoveId,
+  activeMoveIds,
   moveTargetId,
   movePosition,
+  maxMovePosition,
   onMovePositionChange,
   onJump,
   onMoveToPosition,
   onPlaceBefore,
   onPlaceAfter,
+  onEditSelection,
   onCancel,
 }: {
   className: string;
   photos: PhotoMetadata[];
-  activeMoveId: string;
+  activeMoveIds: string[];
   moveTargetId: string | null;
   movePosition: string;
+  maxMovePosition: number;
   onMovePositionChange: (value: string) => void;
   onJump: () => void;
   onMoveToPosition: () => void;
   onPlaceBefore: () => void;
   onPlaceAfter: () => void;
+  onEditSelection?: () => void;
   onCancel: () => void;
 }) {
   const movePositionId = useId();
   const movePositionCountId = useId();
-  const activeIndex = photos.findIndex((photo) => photo.id === activeMoveId);
+  const activeIndex = photos.findIndex((photo) => photo.id === activeMoveIds[0]);
   const targetIndex = moveTargetId ? photos.findIndex((photo) => photo.id === moveTargetId) : -1;
   const activePhoto = activeIndex >= 0 ? photos[activeIndex] : null;
+  const isGroupMove = activeMoveIds.length > 1 || Boolean(onEditSelection);
 
   if (!activePhoto) return null;
 
   return (
-    <div className={`${className} flex-col gap-3`} aria-label="Kontroller for flytting av bilde">
+    <div className={`${className} flex-col gap-3`} aria-label={isGroupMove ? "Kontroller for flytting av flere bilder" : "Kontroller for flytting av bilde"}>
       <div className="flex items-center gap-3">
         <img
           src={activePhoto.thumbnailUrl || activePhoto.url}
-          alt="Bildet som flyttes"
+          alt={isGroupMove ? "Første bilde i gruppen som flyttes" : "Bildet som flyttes"}
           className="h-12 w-12 shrink-0 rounded-lg object-cover ring-2 ring-[#5D4E37]/20"
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-[#5D4E37]">Flytter bilde {activeIndex + 1}</p>
+          <p className="truncate text-sm font-semibold text-[#5D4E37]">
+            {isGroupMove ? `Flytter ${activeMoveIds.length} bilder` : `Flytter bilde ${activeIndex + 1}`}
+          </p>
           <p className="text-xs text-[#8B7355]">
-            {targetIndex >= 0 ? `Nytt sted ved bilde ${targetIndex + 1}` : "Trykk på et bilde som skal være ved siden av"}
+            {targetIndex >= 0
+              ? `Nytt sted ved bilde ${targetIndex + 1}`
+              : isGroupMove
+                ? "Rekkefølgen mellom de valgte bildene beholdes"
+                : "Trykk på et bilde som skal være ved siden av"}
           </p>
         </div>
+        {onEditSelection && (
+          <Button type="button" variant="ghost" size="sm" onClick={onEditSelection}>
+            Endre utvalg
+          </Button>
+        )}
         <Button type="button" variant="ghost" size="icon" onClick={onCancel} aria-label="Avbryt flytting">
           <X className="h-4 w-4" />
         </Button>
@@ -650,25 +836,60 @@ function MoveControls({
         <div className="flex items-end gap-2">
           <div className="min-w-0 flex-1">
             <label htmlFor={movePositionId} className="mb-1 block text-xs font-medium text-[#6D5B45]">
-              Plassering
+              {isGroupMove ? "Startplassering" : "Plassering"}
             </label>
             <Input
               id={movePositionId}
               type="number"
               inputMode="numeric"
               min={1}
-              max={photos.length}
+              max={maxMovePosition}
               value={movePosition}
               onChange={(event) => onMovePositionChange(event.target.value)}
               className="h-10"
               aria-describedby={movePositionCountId}
             />
           </div>
-          <span id={movePositionCountId} className="pb-3 text-xs text-[#8B7355]">av {photos.length}</span>
+          <span id={movePositionCountId} className="pb-3 text-xs text-[#8B7355]">av {maxMovePosition}</span>
           <Button type="button" variant="outline" onClick={onJump}>Hopp</Button>
           <Button type="button" onClick={onMoveToPosition}>Flytt hit</Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function MultiSelectControls({
+  className,
+  selectedCount,
+  onContinue,
+  onCancel,
+}: {
+  className: string;
+  selectedCount: number;
+  onContinue: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className={`${className} flex-col gap-3`} aria-label="Velg flere bilder som skal flyttes">
+      <div className="flex items-center gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E8DED0] text-[#5D4E37]">
+          <Check className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[#5D4E37]">
+            {selectedCount === 0 ? "Marker bildene" : `${selectedCount} ${selectedCount === 1 ? "bilde valgt" : "bilder valgt"}`}
+          </p>
+          <p className="text-xs text-[#8B7355]">Trykk på bildene som skal flyttes samlet</p>
+        </div>
+        <Button type="button" variant="ghost" size="icon" onClick={onCancel} aria-label="Avbryt flervalg">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <Button type="button" onClick={onContinue} disabled={selectedCount === 0}>
+        Velg plassering
+        <ChevronRight className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
