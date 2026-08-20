@@ -1,7 +1,15 @@
+import { parseMediaCursor, type MediaCursor } from "./media-cursor";
+import {
+  createStreamingZipCentralDirectory,
+  createStreamingZipDataDescriptor,
+  createStreamingZipLayout,
+} from "./zip-stream";
+
 type MediaType = "image" | "video";
 type MediaStatus = "pending" | "processing" | "ready" | "error" | "deleted";
 type UploadMethod = "POST" | "PUT" | "PATCH";
 type UploadProtocol = "form" | "tus" | "r2-multipart";
+type MediaArchiveKind = "photos" | "videos";
 type ImageUploadProvider =
   | "auto"
   | "r2"
@@ -15,12 +23,6 @@ interface AppSubtleCrypto extends SubtleCrypto {
     a: ArrayBuffer | ArrayBufferView,
     b: ArrayBuffer | ArrayBufferView
   ): boolean;
-}
-
-interface MediaCursor {
-  sortAt: string;
-  createdAt: string;
-  id: string;
 }
 
 interface AppExecutionContext {
@@ -43,6 +45,19 @@ interface AppR2Object {
   body?: ReadableStream<Uint8Array> | null;
   httpEtag?: string;
   size?: number;
+}
+
+interface MediaArchiveManifestEntry {
+  crc32: number;
+  id: string;
+  size: number;
+}
+
+interface MediaArchiveManifest {
+  entries: MediaArchiveManifestEntry[];
+  generatedAt: string;
+  kind: MediaArchiveKind;
+  version: 1;
 }
 
 interface AppR2UploadedPart {
@@ -273,12 +288,38 @@ const DEFAULT_STREAM_BASIC_MAX_BYTES = 190 * 1024 * 1024;
 const DEFAULT_STREAM_MAX_DURATION_SECONDS = 60 * 60;
 const MAX_ADMIN_MEDIA = 2000;
 const MAX_ADMIN_DELETE_BATCH = 100;
-const PHOTO_ARCHIVE_KEY = "archives/silje-og-sindre-bilder.zip";
-const PHOTO_ARCHIVE_FILENAME = "silje-og-sindre-bilder.zip";
-const PHOTO_ARCHIVE_PART_BYTES = 20 * 1024 * 1024;
+const MEDIA_ARCHIVES: Record<
+  MediaArchiveKind,
+  {
+    directory: string;
+    key: string;
+    filename: string;
+    manifestKey: string;
+    source: string;
+  }
+> = {
+  photos: {
+    directory: "Silje og Sindre - Bilder",
+    key: "archives/silje-og-sindre-bilder.zip",
+    filename: "silje-og-sindre-bilder.zip",
+    manifestKey: "archives/silje-og-sindre-bilder.manifest.json",
+    source: "bryllup-photo-archive",
+  },
+  videos: {
+    directory: "Silje og Sindre - Videoer",
+    key: "archives/silje-og-sindre-videoer.zip",
+    filename: "silje-og-sindre-videoer.zip",
+    manifestKey: "archives/silje-og-sindre-videoer.manifest.json",
+    source: "bryllup-video-archive",
+  },
+};
+const MEDIA_ARCHIVE_PART_BYTES = 20 * 1024 * 1024;
+const MAX_SELECTED_MEDIA = 100;
+const SELECTED_ARCHIVE_FILENAME = "silje-og-sindre-utvalg.zip";
+const CRC32_TABLE = createCrc32Table();
 const IMMUTABLE_MEDIA_CACHE_CONTROL =
   "public, max-age=31536000, s-maxage=31536000, immutable";
-const PHOTO_ARCHIVE_CACHE_CONTROL = "public, max-age=3600, s-maxage=3600";
+const MEDIA_ARCHIVE_CACHE_CONTROL = "public, max-age=3600, s-maxage=3600";
 
 export default {
   async fetch(
@@ -306,40 +347,63 @@ export default {
         return listMedia(request, env);
       }
 
-      if (
-        (request.method === "GET" || request.method === "HEAD") &&
-        path === "/downloads/photos.zip"
-      ) {
-        return getPhotoArchive(request, env);
+      if (request.method === "GET" && path === "/downloads/selected.zip") {
+        return await getSelectedMediaArchive(request, env);
       }
 
-      if (request.method === "POST" && path === "/downloads/photos.zip/upload") {
-        requirePhotoArchiveUploadToken(request, env);
-        return createPhotoArchiveUpload(request, env);
+      const archiveDownloadMatch = path.match(/^\/downloads\/(photos|videos)\.zip$/);
+      const archiveDownloadKind = mediaArchiveKind(archiveDownloadMatch?.[1]);
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        archiveDownloadKind
+      ) {
+        return await getMediaArchive(request, env, archiveDownloadKind);
+      }
+
+      const archiveUploadMatch = path.match(
+        /^\/downloads\/(photos|videos)\.zip\/upload$/
+      );
+      const archiveUploadKind = mediaArchiveKind(archiveUploadMatch?.[1]);
+      if (request.method === "POST" && archiveUploadKind) {
+        requireMediaArchiveUploadToken(request, env);
+        return await createMediaArchiveUpload(request, env, archiveUploadKind);
+      }
+
+      const archiveManifestMatch = path.match(
+        /^\/downloads\/(photos|videos)\.zip\/manifest$/
+      );
+      const archiveManifestKind = mediaArchiveKind(archiveManifestMatch?.[1]);
+      if (request.method === "PUT" && archiveManifestKind) {
+        requireMediaArchiveUploadToken(request, env);
+        return await uploadMediaArchiveManifest(request, env, archiveManifestKind);
       }
 
       const archivePartMatch = path.match(
-        /^\/downloads\/photos\.zip\/upload\/parts\/(\d+)$/
+        /^\/downloads\/(photos|videos)\.zip\/upload\/parts\/(\d+)$/
       );
-      if (request.method === "PUT" && archivePartMatch) {
-        requirePhotoArchiveUploadToken(request, env);
-        return uploadPhotoArchivePart(request, env, Number(archivePartMatch[1]));
+      const archivePartKind = mediaArchiveKind(archivePartMatch?.[1]);
+      if (request.method === "PUT" && archivePartKind) {
+        requireMediaArchiveUploadToken(request, env);
+        return await uploadMediaArchivePart(
+          request,
+          env,
+          archivePartKind,
+          Number(archivePartMatch?.[2])
+        );
       }
 
-      if (
-        request.method === "POST" &&
-        path === "/downloads/photos.zip/upload/complete"
-      ) {
-        requirePhotoArchiveUploadToken(request, env);
-        return completePhotoArchiveUpload(request, env);
+      const archiveCompleteMatch = path.match(
+        /^\/downloads\/(photos|videos)\.zip\/upload\/complete$/
+      );
+      const archiveCompleteKind = mediaArchiveKind(archiveCompleteMatch?.[1]);
+      if (request.method === "POST" && archiveCompleteKind) {
+        requireMediaArchiveUploadToken(request, env);
+        return await completeMediaArchiveUpload(request, env, archiveCompleteKind);
       }
 
-      if (
-        request.method === "DELETE" &&
-        path === "/downloads/photos.zip/upload"
-      ) {
-        requirePhotoArchiveUploadToken(request, env);
-        return abortPhotoArchiveUpload(request, env);
+      if (request.method === "DELETE" && archiveUploadKind) {
+        requireMediaArchiveUploadToken(request, env);
+        return await abortMediaArchiveUpload(request, env, archiveUploadKind);
       }
 
       if (request.method === "GET" && path === "/admin/media") {
@@ -520,9 +584,9 @@ async function listMedia(request: Request, env: Env): Promise<Response> {
         `SELECT *, ${sortExpression} AS sort_at FROM media
          WHERE status IN ('ready', 'processing')
            AND (
-             ${sortExpression} > ?
-             OR (${sortExpression} = ? AND created_at > ?)
-             OR (${sortExpression} = ? AND created_at = ? AND id > ?)
+             ${sortExpression} > CAST(? AS INTEGER)
+             OR (${sortExpression} = CAST(? AS INTEGER) AND created_at > ?)
+             OR (${sortExpression} = CAST(? AS INTEGER) AND created_at = ? AND id > ?)
            )
          ORDER BY ${sortExpression} ASC, created_at ASC, id ASC
          LIMIT ?`
@@ -644,8 +708,8 @@ async function softDeleteAdminMedia(request: Request, env: Env): Promise<Respons
     )
   );
 
-  // The archive may still contain removed photos. Make it unavailable until it is rebuilt.
-  await env.MEDIA_BUCKET.delete(PHOTO_ARCHIVE_KEY);
+  // Existing archives may contain removed media. Hide both until they are rebuilt.
+  await invalidateMediaArchives(env);
 
   return json(request, env, {
     success: true,
@@ -689,6 +753,8 @@ async function restoreAdminMedia(request: Request, env: Env): Promise<Response> 
       ).bind(now, id)
     )
   );
+
+  await invalidateMediaArchives(env);
 
   return json(request, env, { success: true, restoredIds: ids });
 }
@@ -739,6 +805,16 @@ function isAdminReadOnly(env: Env): boolean {
   return env.ADMIN_READ_ONLY?.trim().toLowerCase() === "true";
 }
 
+function mediaArchiveKind(value: string | undefined): MediaArchiveKind | null {
+  return value === "photos" || value === "videos" ? value : null;
+}
+
+async function invalidateMediaArchives(env: Env): Promise<void> {
+  await env.MEDIA_BUCKET.delete(
+    Object.values(MEDIA_ARCHIVES).map((archive) => archive.key)
+  );
+}
+
 function isReadOnlyWorkerRouteAllowed(request: Request, path: string): boolean {
   if (path.startsWith("/admin/media")) {
     return true;
@@ -752,7 +828,8 @@ function isReadOnlyWorkerRouteAllowed(request: Request, path: string): boolean {
     path === "/health" ||
     path === "/media" ||
     path.startsWith("/media/") ||
-    path === "/downloads/photos.zip"
+    path === "/downloads/selected.zip" ||
+    /^\/downloads\/(photos|videos)\.zip$/.test(path)
   );
 }
 
@@ -1088,6 +1165,8 @@ async function uploadHostedImage(request: Request, env: Env, id: string): Promis
   )
     .bind(imageId, url, thumbnailUrl, now, now, id)
     .run();
+
+  await invalidateMediaArchives(env);
 
   const updated = await findMedia(env, id);
   return json(request, env, toPublicMedia(updated || row, request), 201);
@@ -1443,6 +1522,8 @@ async function uploadR2Object(request: Request, env: Env, id: string): Promise<R
     .bind(now, now, id)
     .run();
 
+  await invalidateMediaArchives(env);
+
   const updated = await findMedia(env, id);
   return json(request, env, toPublicMedia(updated || row, request), 201);
 }
@@ -1528,6 +1609,8 @@ async function completeR2MultipartUpload(
   )
     .bind(now, now, id)
     .run();
+
+  await invalidateMediaArchives(env);
 
   const updated = await findMedia(env, id);
   return json(request, env, toPublicMedia(updated || row, request), 201);
@@ -1638,90 +1721,344 @@ async function completeUpload(request: Request, env: Env, id: string): Promise<R
     .bind(status, now, now, url, thumbnailUrl, id)
     .run();
 
+  await invalidateMediaArchives(env);
+
   const updated = await findMedia(env, id);
   return json(request, env, toPublicMedia(updated || row, request));
 }
 
-async function getPhotoArchive(request: Request, env: Env): Promise<Response> {
-  const rangeHeader = request.headers.get("Range");
-  const metadata = await env.MEDIA_BUCKET.head(PHOTO_ARCHIVE_KEY);
-  if (!metadata || !metadata.size) {
-    return json(request, env, { error: "Photo archive is not ready" }, 404);
+async function getSelectedMediaArchive(request: Request, env: Env): Promise<Response> {
+  const requestedIds = new URL(request.url).searchParams
+    .get("ids")
+    ?.split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+
+  if (
+    !requestedIds?.length ||
+    requestedIds.length > MAX_SELECTED_MEDIA ||
+    new Set(requestedIds).size !== requestedIds.length ||
+    requestedIds.some((id) => id.length > 200)
+  ) {
+    throw new HttpError(`Velg mellom 1 og ${MAX_SELECTED_MEDIA} filer`, 400);
   }
 
-  const range = parseRangeHeader(rangeHeader, metadata.size);
+  const placeholders = requestedIds.map(() => "?").join(", ");
+  const rows = (
+    await env.DB.prepare(
+      `SELECT * FROM media
+       WHERE id IN (${placeholders})
+         AND status IN ('ready', 'processing')
+         AND object_key IS NOT NULL`
+    )
+      .bind(...requestedIds)
+      .all<MediaRow>()
+  ).results;
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  const orderedRows = requestedIds
+    .map((id) => rowsById.get(id))
+    .filter((row): row is MediaRow => Boolean(row));
+
+  if (orderedRows.length !== requestedIds.length) {
+    throw new HttpError(
+      "Ett eller flere valgte medier er ikke lenger tilgjengelige",
+      409
+    );
+  }
+
+  const usedNames = new Map<string, number>();
+  const layout = createStreamingZipLayout(
+    orderedRows.map((row) => ({
+      filename: `Silje og Sindre - Utvalg/${uniqueSelectedArchiveName(
+        row,
+        usedNames
+      )}`,
+      size: row.size,
+      timestamp: row.taken_at || row.uploaded_at || row.created_at,
+    }))
+  );
+
+  const stream = selectedArchiveStream(env, orderedRows, layout);
   const headers = cacheableMediaHeaders(request, env);
   headers.set("Content-Type", "application/zip");
   headers.set(
     "Content-Disposition",
-    `attachment; filename="${PHOTO_ARCHIVE_FILENAME}"`
+    `attachment; filename="${SELECTED_ARCHIVE_FILENAME}"`
   );
-  headers.set("Cache-Control", PHOTO_ARCHIVE_CACHE_CONTROL);
-  headers.set("Accept-Ranges", "bytes");
+  headers.set("Content-Length", String(layout.contentLength));
+  headers.set("Cache-Control", "private, no-store");
+  headers.set("X-Content-Type-Options", "nosniff");
+  return new Response(stream, { headers });
+}
+
+async function loadMediaArchiveManifest(
+  env: Env,
+  kind: MediaArchiveKind
+): Promise<MediaArchiveManifest> {
+  const object = await env.MEDIA_BUCKET.get(MEDIA_ARCHIVES[kind].manifestKey);
+  if (!object?.body) {
+    throw new HttpError("Nedlastingsoversikten oppdateres. Prøv igjen om litt.", 503);
+  }
+
+  const payload = (await new Response(object.body).json()) as Partial<MediaArchiveManifest>;
+  if (payload.version !== 1 || payload.kind !== kind || !Array.isArray(payload.entries)) {
+    throw new HttpError("Nedlastingsoversikten er ugyldig", 503);
+  }
+  return payload as MediaArchiveManifest;
+}
+
+function selectedArchiveStream(
+  env: Env,
+  rows: MediaRow[],
+  layout: ReturnType<typeof createStreamingZipLayout>
+): ReadableStream<Uint8Array> {
+  let entryIndex = 0;
+  let headerSent = false;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  let entryCrc = 0xffffffff;
+  const crc32Values: number[] = [];
+  let centralDirectory: Uint8Array[] | null = null;
+  let centralIndex = 0;
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (entryIndex < layout.entries.length) {
+        if (!headerSent) {
+          controller.enqueue(layout.entries[entryIndex].localHeader);
+          headerSent = true;
+          entryCrc = 0xffffffff;
+          return;
+        }
+
+        if (!reader) {
+          const objectKey = rows[entryIndex].object_key;
+          const object = objectKey ? await env.MEDIA_BUCKET.get(objectKey) : null;
+          if (!object?.body) {
+            controller.error(new Error("En valgt originalfil mangler i lagringen"));
+            return;
+          }
+          if (object.size !== undefined && object.size !== rows[entryIndex].size) {
+            controller.error(new Error("En originalfil har uventet størrelse"));
+            return;
+          }
+          reader = object.body.getReader();
+        }
+
+        const chunk = await reader.read();
+        if (!chunk.done) {
+          entryCrc = updateCrc32(entryCrc, chunk.value);
+          controller.enqueue(chunk.value);
+          return;
+        }
+
+        const completedCrc = (entryCrc ^ 0xffffffff) >>> 0;
+        crc32Values.push(completedCrc);
+        controller.enqueue(
+          createStreamingZipDataDescriptor(
+            layout.entries[entryIndex],
+            completedCrc
+          )
+        );
+        reader = null;
+        headerSent = false;
+        entryIndex += 1;
+        return;
+      }
+
+      centralDirectory ||= createStreamingZipCentralDirectory(layout, crc32Values);
+      if (centralIndex < centralDirectory.length) {
+        controller.enqueue(centralDirectory[centralIndex]);
+        centralIndex += 1;
+        return;
+      }
+
+      controller.close();
+    },
+    async cancel(reason) {
+      await reader?.cancel(reason);
+    },
+  });
+}
+
+function uniqueSelectedArchiveName(
+  row: MediaRow,
+  usedNames: Map<string, number>
+): string {
+  const fallback = row.media_type === "video" ? "video.mp4" : "bilde.jpg";
+  const cleaned = sanitizeFilename(row.original_name || row.filename) || fallback;
+  const key = cleaned.toLocaleLowerCase("nb-NO");
+  const count = (usedNames.get(key) || 0) + 1;
+  usedNames.set(key, count);
+  if (count === 1) return cleaned;
+
+  const dot = cleaned.lastIndexOf(".");
+  return dot > 0
+    ? `${cleaned.slice(0, dot)} (${count})${cleaned.slice(dot)}`
+    : `${cleaned} (${count})`;
+}
+
+async function uploadMediaArchiveManifest(
+  request: Request,
+  env: Env,
+  kind: MediaArchiveKind
+): Promise<Response> {
+  const body = (await request.json()) as Partial<MediaArchiveManifest>;
+  const entries = Array.isArray(body.entries) ? body.entries : [];
+  const validEntries = entries.filter(
+    (entry): entry is MediaArchiveManifestEntry =>
+      typeof entry?.id === "string" &&
+      entry.id.length > 0 &&
+      entry.id.length <= 200 &&
+      Number.isInteger(entry.crc32) &&
+      entry.crc32 >= 0 &&
+      entry.crc32 <= 0xffffffff &&
+      Number.isSafeInteger(entry.size) &&
+      entry.size > 0
+  );
+
+  if (
+    body.version !== 1 ||
+    body.kind !== kind ||
+    entries.length === 0 ||
+    entries.length > MAX_ADMIN_MEDIA ||
+    validEntries.length !== entries.length ||
+    new Set(validEntries.map((entry) => entry.id)).size !== validEntries.length
+  ) {
+    throw new HttpError("Ugyldig arkivoversikt", 400);
+  }
+
+  const manifest: MediaArchiveManifest = {
+    entries: validEntries,
+    generatedAt: new Date().toISOString(),
+    kind,
+    version: 1,
+  };
+  await env.MEDIA_BUCKET.put(
+    MEDIA_ARCHIVES[kind].manifestKey,
+    JSON.stringify(manifest),
+    {
+      httpMetadata: { contentType: "application/json" },
+      customMetadata: { source: MEDIA_ARCHIVES[kind].source },
+    }
+  );
+
+  return json(request, env, { ok: true, count: validEntries.length });
+}
+
+async function getMediaArchive(
+  request: Request,
+  env: Env,
+  kind: MediaArchiveKind
+): Promise<Response> {
+  return getDynamicMediaArchive(request, env, kind);
+}
+
+async function getDynamicMediaArchive(
+  request: Request,
+  env: Env,
+  kind: MediaArchiveKind
+): Promise<Response> {
+  const mediaType: MediaType = kind === "videos" ? "video" : "image";
+  const rows = (
+    await env.DB.prepare(
+      `SELECT * FROM media
+       WHERE media_type = ?
+         AND status IN ('ready', 'processing')
+         AND object_key IS NOT NULL
+       ORDER BY COALESCE(display_order, 2147483647), created_at, id`
+    )
+      .bind(mediaType)
+      .all<MediaRow>()
+  ).results;
+  if (rows.length === 0) {
+    throw new HttpError("Media archive is not ready", 404);
+  }
+
+  const usedNames = new Map<string, number>();
+  const layout = createStreamingZipLayout(
+    rows.map((row) => ({
+      filename: `${MEDIA_ARCHIVES[kind].directory}/${uniqueSelectedArchiveName(
+        row,
+        usedNames
+      )}`,
+      size: row.size,
+      timestamp: row.taken_at || row.uploaded_at || row.created_at,
+    }))
+  );
+  const headers = cacheableMediaHeaders(request, env);
+  headers.set("Content-Type", "application/zip");
   headers.set(
-    "Content-Length",
-    String(range ? range.end - range.start + 1 : metadata.size)
+    "Content-Disposition",
+    `attachment; filename="${MEDIA_ARCHIVES[kind].filename}"`
   );
-  if (metadata.httpEtag) {
-    headers.set("ETag", metadata.httpEtag);
-  }
-  if (range) {
-    headers.set("Content-Range", `bytes ${range.start}-${range.end}/${metadata.size}`);
-  }
+  headers.set("Content-Length", String(layout.contentLength));
+  headers.set("Cache-Control", "private, no-store");
+  headers.set("X-Content-Type-Options", "nosniff");
 
   if (request.method === "HEAD") {
     return new Response(null, { headers });
   }
-
-  const object = await env.MEDIA_BUCKET.get(
-    PHOTO_ARCHIVE_KEY,
-    range
-      ? {
-          range: {
-            offset: range.start,
-            length: range.end - range.start + 1,
-          },
-        }
-      : undefined
-  );
-  if (!object?.body) {
-    return json(request, env, { error: "Photo archive is not ready" }, 404);
-  }
-
-  return new Response(object.body, { status: range ? 206 : 200, headers });
+  return new Response(selectedArchiveStream(env, rows, layout), { headers });
 }
 
-async function createPhotoArchiveUpload(request: Request, env: Env): Promise<Response> {
-  const upload = await env.MEDIA_BUCKET.createMultipartUpload(PHOTO_ARCHIVE_KEY, {
+function updateCrc32(crc: number, chunk: Uint8Array): number {
+  let updated = crc;
+  for (let index = 0; index < chunk.length; index++) {
+    updated = CRC32_TABLE[(updated ^ chunk[index]) & 0xff] ^ (updated >>> 8);
+  }
+  return updated;
+}
+
+function createCrc32Table(): Uint32Array {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index++) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit++) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+}
+
+async function createMediaArchiveUpload(
+  request: Request,
+  env: Env,
+  kind: MediaArchiveKind
+): Promise<Response> {
+  const archive = MEDIA_ARCHIVES[kind];
+  const upload = await env.MEDIA_BUCKET.createMultipartUpload(archive.key, {
     httpMetadata: {
       contentType: "application/zip",
-      contentDisposition: `attachment; filename="${PHOTO_ARCHIVE_FILENAME}"`,
-      cacheControl: PHOTO_ARCHIVE_CACHE_CONTROL,
+      contentDisposition: `attachment; filename="${archive.filename}"`,
+      cacheControl: MEDIA_ARCHIVE_CACHE_CONTROL,
     },
     customMetadata: {
-      source: "bryllup-photo-archive",
+      source: archive.source,
     },
   });
 
   const uploadId = encodeURIComponent(upload.uploadId);
+  const archivePath = `/downloads/${kind}.zip`;
   return json(request, env, {
     uploadId: upload.uploadId,
-    partSize: PHOTO_ARCHIVE_PART_BYTES,
-    uploadPartsUrl: absoluteUrl(request, "/downloads/photos.zip/upload/parts"),
+    partSize: MEDIA_ARCHIVE_PART_BYTES,
+    uploadPartsUrl: absoluteUrl(request, `${archivePath}/upload/parts`),
     completeUrl: absoluteUrl(
       request,
-      `/downloads/photos.zip/upload/complete?uploadId=${uploadId}`
+      `${archivePath}/upload/complete?uploadId=${uploadId}`
     ),
     abortUrl: absoluteUrl(
       request,
-      `/downloads/photos.zip/upload?uploadId=${uploadId}`
+      `${archivePath}/upload?uploadId=${uploadId}`
     ),
   });
 }
 
-async function uploadPhotoArchivePart(
+async function uploadMediaArchivePart(
   request: Request,
   env: Env,
+  kind: MediaArchiveKind,
   partNumber: number
 ): Promise<Response> {
   const uploadId = requiredUploadId(request);
@@ -1732,12 +2069,20 @@ async function uploadPhotoArchivePart(
     return json(request, env, { error: "Missing request body" }, 400);
   }
 
-  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(PHOTO_ARCHIVE_KEY, uploadId);
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(
+    MEDIA_ARCHIVES[kind].key,
+    uploadId
+  );
   const part = await upload.uploadPart(partNumber, request.body);
   return json(request, env, part);
 }
 
-async function completePhotoArchiveUpload(request: Request, env: Env): Promise<Response> {
+async function completeMediaArchiveUpload(
+  request: Request,
+  env: Env,
+  kind: MediaArchiveKind
+): Promise<Response> {
+  const archive = MEDIA_ARCHIVES[kind];
   const uploadId = requiredUploadId(request);
   const body = (await request.json()) as { parts?: AppR2UploadedPart[] };
   const parts = (body.parts || [])
@@ -1754,18 +2099,25 @@ async function completePhotoArchiveUpload(request: Request, env: Env): Promise<R
     return json(request, env, { error: "Missing uploaded parts" }, 400);
   }
 
-  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(PHOTO_ARCHIVE_KEY, uploadId);
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(archive.key, uploadId);
   const object = await upload.complete(parts);
   return json(request, env, {
     ok: true,
-    key: object.key || PHOTO_ARCHIVE_KEY,
-    downloadUrl: absoluteUrl(request, "/downloads/photos.zip"),
+    key: object.key || archive.key,
+    downloadUrl: absoluteUrl(request, `/downloads/${kind}.zip`),
   });
 }
 
-async function abortPhotoArchiveUpload(request: Request, env: Env): Promise<Response> {
+async function abortMediaArchiveUpload(
+  request: Request,
+  env: Env,
+  kind: MediaArchiveKind
+): Promise<Response> {
   const uploadId = requiredUploadId(request);
-  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(PHOTO_ARCHIVE_KEY, uploadId);
+  const upload = env.MEDIA_BUCKET.resumeMultipartUpload(
+    MEDIA_ARCHIVES[kind].key,
+    uploadId
+  );
   await upload.abort();
   return new Response(null, { status: 204, headers: corsHeaders(request, env) });
 }
@@ -2531,19 +2883,6 @@ function encodeMediaCursor(row: MediaRow | undefined): string | undefined {
   return `${sortAt}|${row.created_at}|${row.id}`;
 }
 
-function parseMediaCursor(value: string | null): MediaCursor | null {
-  if (!value) {
-    return null;
-  }
-
-  const [sortAt, createdAt, id] = value.split("|", 3);
-  if (!sortAt || !createdAt || !id || !Number.isFinite(Number(sortAt))) {
-    return null;
-  }
-
-  return { sortAt, createdAt, id };
-}
-
 function parseInteger(value: string | null | undefined, fallback: number): number {
   const parsed = Number.parseInt(value || "", 10);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -2569,7 +2908,7 @@ function requireUploadToken(request: Request, env: Env): void {
   }
 }
 
-function requirePhotoArchiveUploadToken(request: Request, env: Env): void {
+function requireMediaArchiveUploadToken(request: Request, env: Env): void {
   const token = env.ARCHIVE_UPLOAD_TOKEN || env.UPLOAD_TOKEN;
   if (!token) {
     throw new HttpError("Archive upload is not configured", 503);

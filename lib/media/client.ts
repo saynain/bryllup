@@ -2,6 +2,7 @@ import type { ListResult } from "@/lib/storage/types";
 
 type UploadProtocol = "form" | "tus" | "r2-multipart";
 type MediaType = "image" | "video";
+export type MediaArchiveKind = "photos" | "videos";
 
 interface UploadedPart {
   etag: string;
@@ -66,8 +67,15 @@ export function isCloudflareMediaEnabled(): boolean {
   return Boolean(MEDIA_API_URL);
 }
 
-export function getPhotoArchiveUrl(): string | undefined {
-  return MEDIA_API_URL ? `${MEDIA_API_URL}/downloads/photos.zip` : undefined;
+export function getMediaArchiveUrl(kind: MediaArchiveKind): string | undefined {
+  return MEDIA_API_URL ? `${MEDIA_API_URL}/downloads/${kind}.zip` : undefined;
+}
+
+export function getSelectedMediaArchiveUrl(ids: string[]): string | undefined {
+  if (!MEDIA_API_URL || ids.length === 0) return undefined;
+
+  const searchParams = new URLSearchParams({ ids: ids.join(",") });
+  return `${MEDIA_API_URL}/downloads/selected.zip?${searchParams}`;
 }
 
 export function isRetryableUploadError(error: unknown): boolean {
