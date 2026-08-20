@@ -29,6 +29,14 @@ interface UploadProgress {
   total: number;
 }
 
+interface AdminMediaList extends ListResult {
+  readOnly?: boolean;
+}
+
+interface AdminMutationResult {
+  dryRun?: boolean;
+}
+
 interface UploadOptions {
   onProgress?: (progress: UploadProgress) => void;
   uploadedBy?: string;
@@ -48,6 +56,8 @@ export class MediaUploadError extends Error {
 }
 
 const MEDIA_API_URL = process.env.NEXT_PUBLIC_MEDIA_API_URL?.replace(/\/$/, "");
+const MEDIA_ADMIN_API_URL = process.env.NEXT_PUBLIC_MEDIA_ADMIN_API_URL?.replace(/\/$/, "");
+const TEST_MEDIA_ADMIN_API_URL = "https://bryllup-media-staging.saynain.workers.dev";
 const MEDIA_UPLOAD_TOKEN = process.env.NEXT_PUBLIC_MEDIA_UPLOAD_TOKEN;
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "heic", "heif"]);
 const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "m4v", "webm", "mpeg", "mpg"]);
@@ -85,6 +95,89 @@ export async function fetchMediaList(params: {
   }
 
   return response.json();
+}
+
+export async function fetchAdminMedia(adminToken: string): Promise<AdminMediaList> {
+  const response = await fetch(mediaAdminUrl("/admin/media"), {
+    headers: adminHeaders(adminToken),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw await adminResponseError(response, "Kunne ikke åpne administrasjonen");
+  }
+
+  return response.json();
+}
+
+export async function updateMediaOrder(
+  adminToken: string,
+  ids: string[]
+): Promise<AdminMutationResult> {
+  const response = await fetch(mediaAdminUrl("/admin/media/order"), {
+    method: "PATCH",
+    headers: adminHeaders(adminToken, true),
+    body: JSON.stringify({ ids }),
+  });
+
+  if (!response.ok) {
+    throw await adminResponseError(response, "Kunne ikke lagre rekkefølgen");
+  }
+  return response.json();
+}
+
+export async function deleteAdminMedia(
+  adminToken: string,
+  ids: string[]
+): Promise<AdminMutationResult> {
+  const response = await fetch(mediaAdminUrl("/admin/media"), {
+    method: "DELETE",
+    headers: adminHeaders(adminToken, true),
+    body: JSON.stringify({ ids }),
+  });
+
+  if (!response.ok) {
+    throw await adminResponseError(response, "Kunne ikke slette de valgte bildene");
+  }
+  return response.json();
+}
+
+export async function restoreAdminMedia(
+  adminToken: string,
+  ids: string[]
+): Promise<AdminMutationResult> {
+  const response = await fetch(mediaAdminUrl("/admin/media/restore"), {
+    method: "POST",
+    headers: adminHeaders(adminToken, true),
+    body: JSON.stringify({ ids }),
+  });
+
+  if (!response.ok) {
+    throw await adminResponseError(response, "Kunne ikke angre slettingen");
+  }
+  return response.json();
+}
+
+function mediaAdminUrl(path: string): string {
+  const isTestHost =
+    typeof window !== "undefined" && window.location.hostname === "test.bryllup.rylands.no";
+  const baseUrl = MEDIA_ADMIN_API_URL || (isTestHost ? TEST_MEDIA_ADMIN_API_URL : MEDIA_API_URL);
+  if (!baseUrl) {
+    throw new Error("Mediaadministrasjon krever Cloudflare-galleriet");
+  }
+  return `${baseUrl}${path}`;
+}
+
+function adminHeaders(adminToken: string, json = false): HeadersInit {
+  return {
+    ...(json ? { "Content-Type": "application/json" } : {}),
+    "X-Admin-Token": adminToken,
+  };
+}
+
+async function adminResponseError(response: Response, fallback: string): Promise<Error> {
+  const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+  return new Error(payload?.error || fallback);
 }
 
 export async function uploadMediaFile(

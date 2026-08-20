@@ -1,4 +1,4 @@
-name = "bryllup-media"
+name = "bryllup-media-staging"
 account_id = "81b362ce37970cd10f656efd41e28052"
 main = "src/index.ts"
 compatibility_date = "2026-08-20"
@@ -20,24 +20,16 @@ binding = "STREAM"
 [images]
 binding = "IMAGES"
 
-# Cache transformed thumbnails and previews at the edge so the Images binding
-# only performs each standardized transformation when it is first requested.
 [cache]
 enabled = true
 
 [vars]
-# Comma-separated origins allowed to call this Worker from the browser.
-CORS_ORIGINS = "http://localhost:3000,https://test.bryllup.rylands.no,https://bryllup.rylands.no"
-
-# Cloudflare Images delivery base, for example:
-# https://imagedelivery.net/<account_hash>
-# New image uploads use R2 to avoid Cloudflare Images plan/quota limits during the event.
+CORS_ORIGINS = "http://localhost:3000,https://test.bryllup.rylands.no"
+ADMIN_READ_ONLY = "true"
 IMAGE_UPLOAD_PROVIDER = "r2"
 IMAGE_DELIVERY_BASE_URL = ""
 IMAGE_VARIANT_PUBLIC = "public"
 IMAGE_VARIANT_THUMB = "thumbnail"
-
-# Upload caps are intentionally configurable instead of hard-coded in the UI.
 MAX_IMAGE_BYTES = "50000000"
 MAX_VIDEO_BYTES = "5368709120"
 R2_MULTIPART_PART_BYTES = "5242880"
