@@ -102,7 +102,7 @@ export default function LegacyHome() {
               transition={{ duration: 0.8, ease: "easeOut" }}
               className="text-2xl leading-relaxed font-light text-[#5D4E37] drop-shadow-lg md:text-3xl"
             >
-              Velkommen til vårt bryllup 15.august 2026. Vi gleder oss til å feire kjærligheten med familie og venner.
+              Tusen takk for at dere var med å dele dagen med oss. Dere gjorde den perfekt!
             </motion.p>
           </div>
         </div>
