@@ -3,10 +3,7 @@
 import { useRef } from "react";
 import Image from "next/image";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { LocationSection } from "@/components/sections/location-section";
 import { PhotoSection } from "@/components/sections/photo-section";
-import { RSVPSection } from "@/components/sections/rsvp-section";
-import { WishlistSection } from "@/components/sections/wishlist-section";
 
 export default function Home() {
   const ref = useRef(null);
@@ -20,7 +17,6 @@ export default function Home() {
 
   const section2Ref = useRef(null);
   const section3Ref = useRef(null);
-  const section4Ref = useRef(null);
 
   const { scrollYProgress: section2Progress } = useScroll({
     target: section2Ref,
@@ -33,12 +29,6 @@ export default function Home() {
     offset: ["start end", "end start"]
   });
   const y3 = useTransform(section3Progress, [0, 1], ["-20%", "20%"]);
-
-  const { scrollYProgress: section4Progress } = useScroll({
-    target: section4Ref,
-    offset: ["start end", "end start"]
-  });
-  const y4 = useTransform(section4Progress, [0, 1], ["-20%", "20%"]);
 
   return (
     <main ref={ref} className="relative min-h-screen">
@@ -125,7 +115,10 @@ export default function Home() {
               transition={{ duration: 0.8, ease: "easeOut" }}
               className="text-2xl md:text-3xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
             >
-              Velkommen til vårt bryllup 15.august 2026. Vi gleder oss til å feire kjærligheten med familie og venner.
+              Tusen takk for at dere var med å dele dagen med oss. Dere gjorde den{" "}
+              <span className="whitespace-nowrap">
+                perfekt! <span aria-hidden="true" className="text-[0.78em]">♥</span>
+              </span>
             </motion.p>
           </div>
         </div>
@@ -161,70 +154,11 @@ export default function Home() {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
           </motion.div>
-
-          {/* Ceremony Info Text */}
-          <div className="text-center py-12">
-            <motion.p
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-              className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed drop-shadow-lg"
-            >
-              Seremonien holdes i Arna kirke klokken 15:00.
-            </motion.p>
-          </div>
         </div>
       </section>
-
-      {/* Share the Day Section */}
-      <section ref={section4Ref} className="relative min-h-screen flex items-center justify-center px-4 overflow-hidden">
-        {/* Background Image */}
-        <motion.div className="absolute inset-0 z-0" style={{ y: y4 }}>
-          <Image
-            src="/photos/Bilde_4.jpg"
-            alt="Silje & Sindre"
-            fill
-            className="object-cover"
-          />
-          <div className="absolute inset-0 bg-white/40" />
-        </motion.div>
-
-        <div className="relative z-10 max-w-4xl mx-auto w-full">
-          {/* Message Text */}
-          <div className="text-center space-y-8 py-12">
-            <motion.div
-              initial={{ opacity: 0, y: 36 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.3 }}
-              transition={{ duration: 0.8, ease: "easeOut", delay: 0.15 }}
-              className="mx-auto max-w-2xl rounded-[2rem] border border-white/50 bg-white/55 px-6 py-7 text-center shadow-[0_20px_60px_rgba(93,78,55,0.14)] backdrop-blur-md md:px-10 md:py-9"
-            >
-              <p className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed">
-                Etter vielsen samles vi på Øvre-Eide Gård for litt mingling,
-                hvor det vil bli servert velkomstdrink.
-                <span className="mt-3 block">Middagen starter kl. 17:45.</span>
-              </p>
-              <div className="mx-auto my-6 h-px w-full max-w-md bg-[#B8A491]/45" />
-              <p className="text-xl md:text-2xl text-[#5D4E37] font-light leading-relaxed">
-                Vi håper at dere vil dele denne store dagen med oss.
-              </p>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* Location Section with Map */}
-      <LocationSection />
 
       {/* Photo Sharing Section */}
       <PhotoSection />
-
-      {/* Wishlist Section */}
-      <WishlistSection />
-
-      {/* RSVP Section */}
-      <RSVPSection />
 
     </main>
   );
