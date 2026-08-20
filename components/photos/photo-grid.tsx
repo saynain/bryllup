@@ -47,7 +47,6 @@ const ARCHIVE_OPTIONS: Array<{
 
 interface ArchiveStatus {
   available: boolean;
-  size?: number;
 }
 
 interface PhotoGridProps {
@@ -158,12 +157,10 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
             method: "HEAD",
             signal: controller.signal,
           });
-          const size = Number(response.headers.get("Content-Length"));
           return [
             kind,
             {
               available: response.ok,
-              size: response.ok && Number.isFinite(size) && size > 0 ? size : undefined,
             },
           ] as const;
         } catch {
@@ -289,7 +286,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
             <p className="mt-0.5 text-sm text-[#8B7355]">
               {selectionMode
                 ? `Trykk på filene du vil ha. Du kan velge opptil ${MAX_SELECTED_MEDIA} originalfiler om gangen.`
-                : "Last ned alt samlet, eller velg akkurat de bildene og videoene du vil ha."}
+                : "Last ned alt samlet, eller velg de bildene og videoene du vil ha."}
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -303,8 +300,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
                 <Button key={kind} asChild variant="outline" className="shrink-0">
                   <a href={url} target="_blank" rel="noreferrer">
                     <ArchiveIcon className="h-4 w-4" />
-                    Last ned {label}
-                    {archive.size ? ` (${formatArchiveSize(archive.size)})` : ""}
+                    Last ned alle {label}
                     <Download className="h-4 w-4" />
                   </a>
                 </Button>
@@ -418,16 +414,4 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
       )}
     </>
   );
-}
-
-function formatArchiveSize(bytes: number): string {
-  const gigabytes = bytes / (1024 ** 3);
-  if (gigabytes >= 1) {
-    return `${new Intl.NumberFormat("nb-NO", {
-      maximumFractionDigits: 1,
-      minimumFractionDigits: 1,
-    }).format(gigabytes)} GB`;
-  }
-
-  return `${Math.round(bytes / (1024 ** 2))} MB`;
 }
