@@ -2,9 +2,11 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { FormEvent, useCallback, useState } from "react";
+import { FormEvent, useCallback, useId, useState } from "react";
 import {
   ArrowLeft,
+  ArrowDownToLine,
+  ArrowUpToLine,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -17,6 +19,7 @@ import {
   RotateCcw,
   Save,
   Trash2,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -40,6 +43,7 @@ export function PhotoAdmin() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoMetadata | null>(null);
   const [activeMoveId, setActiveMoveId] = useState<string | null>(null);
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
   const [movePosition, setMovePosition] = useState("");
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [lastDeletedIds, setLastDeletedIds] = useState<string[]>([]);
@@ -56,6 +60,7 @@ export function PhotoAdmin() {
     setSelectedIds(new Set());
     setSelectedPhoto(null);
     setActiveMoveId(null);
+    setMoveTargetId(null);
     setMovePosition("");
     setIsDirty(false);
   }, []);
@@ -97,6 +102,7 @@ export function PhotoAdmin() {
     setNotice(null);
     setSelectedIds(new Set());
     setActiveMoveId(null);
+    setMoveTargetId(null);
     setMovePosition("");
     setMode(nextMode);
   };
@@ -113,25 +119,86 @@ export function PhotoAdmin() {
     setPhotos(next);
     setIsDirty(true);
     setNotice(null);
+    if (activeMoveId === id) setMovePosition(String(toIndex + 1));
   };
 
   const chooseMovePhoto = (id: string) => {
     const index = photos.findIndex((photo) => photo.id === id);
     setActiveMoveId(id);
+    setMoveTargetId(null);
     setMovePosition(index >= 0 ? String(index + 1) : "");
     setError(null);
   };
 
-  const moveToEnteredPosition = () => {
-    if (!activeMoveId) return;
+  const chooseMoveTarget = (id: string) => {
+    if (!activeMoveId) {
+      chooseMovePhoto(id);
+      return;
+    }
+    if (id === activeMoveId) return;
+    setMoveTargetId(id);
+    setError(null);
+  };
+
+  const cancelMove = () => {
+    setActiveMoveId(null);
+    setMoveTargetId(null);
+    setMovePosition("");
+    setError(null);
+  };
+
+  const moveAroundTarget = (placement: "before" | "after") => {
+    if (!activeMoveId || !moveTargetId) return;
+
+    const sourceIndex = photos.findIndex((photo) => photo.id === activeMoveId);
+    if (sourceIndex < 0) return;
+
+    const next = [...photos];
+    const [moved] = next.splice(sourceIndex, 1);
+    const targetIndex = next.findIndex((photo) => photo.id === moveTargetId);
+    if (targetIndex < 0) return;
+
+    const insertIndex = targetIndex + (placement === "after" ? 1 : 0);
+    if (insertIndex === sourceIndex) {
+      setMovePosition(String(sourceIndex + 1));
+      setMoveTargetId(null);
+      return;
+    }
+    next.splice(insertIndex, 0, moved);
+    setPhotos(next);
+    setMovePosition(String(insertIndex + 1));
+    setMoveTargetId(null);
+    setIsDirty(true);
+    setError(null);
+    setNotice(null);
+  };
+
+  const parseMovePosition = () => {
     const position = Number.parseInt(movePosition, 10);
     if (!Number.isFinite(position) || position < 1 || position > photos.length) {
       setError(`Velg en plassering mellom 1 og ${photos.length}.`);
-      return;
+      return null;
     }
+    setError(null);
+    return position;
+  };
+
+  const jumpToEnteredPosition = () => {
+    const position = parseMovePosition();
+    if (position === null) return;
+    document.getElementById(`admin-photo-${position}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  };
+
+  const moveToEnteredPosition = () => {
+    if (!activeMoveId) return;
+    const position = parseMovePosition();
+    if (position === null) return;
     movePhoto(activeMoveId, position - 1);
     setMovePosition(String(position));
-    setError(null);
+    setMoveTargetId(null);
   };
 
   const handleSaveOrder = async () => {
@@ -206,6 +273,9 @@ export function PhotoAdmin() {
     setLastDeletedIds([]);
     setIsReadOnly(false);
     setIsDirty(false);
+    setActiveMoveId(null);
+    setMoveTargetId(null);
+    setMovePosition("");
     setError(null);
     setNotice(null);
   };
@@ -299,31 +369,30 @@ export function PhotoAdmin() {
         </div>
 
         {mode === "order" && activeMoveId && (
-          <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-[#E8DED0] pt-3">
-            <div>
-              <label htmlFor="move-position" className="mb-1 block text-xs font-medium text-[#6D5B45]">
-                Flytt valgt bilde til plassering
-              </label>
-              <Input
-                id="move-position"
-                type="number"
-                min={1}
-                max={photos.length}
-                value={movePosition}
-                onChange={(event) => setMovePosition(event.target.value)}
-                className="h-10 w-28"
-              />
-            </div>
-            <Button variant="outline" onClick={moveToEnteredPosition}>Flytt</Button>
-            <span className="pb-2 text-xs text-[#8B7355]">av {photos.length}</span>
-          </div>
+          <MoveControls
+            className="mt-3 hidden border-t border-[#E8DED0] pt-3 sm:flex"
+            photos={photos}
+            activeMoveId={activeMoveId}
+            moveTargetId={moveTargetId}
+            movePosition={movePosition}
+            onMovePositionChange={setMovePosition}
+            onJump={jumpToEnteredPosition}
+            onMoveToPosition={moveToEnteredPosition}
+            onPlaceBefore={() => moveAroundTarget("before")}
+            onPlaceAfter={() => moveAroundTarget("after")}
+            onCancel={cancelMove}
+          />
         )}
       </div>
 
       {mode === "delete" ? (
         <p className="mb-4 text-sm text-[#8B7355]">Trykk på bilder for å markere dem. Bruk øyet for å se et bilde i full størrelse.</p>
       ) : (
-        <p className="mb-4 text-sm text-[#8B7355]">Dra bilder på datamaskin, eller velg et bilde og skriv ønsket plassering på mobil.</p>
+        <p className="mb-4 text-sm text-[#8B7355]">
+          {activeMoveId
+            ? "Finn stedet i albumet og trykk på et annet bilde. Velg deretter om bildet skal plasseres før eller etter."
+            : "Trykk på bildet du vil flytte. På datamaskin kan du også dra bilder direkte."}
+        </p>
       )}
 
       {error && <div className="mb-4"><StatusMessage tone="error">{error}</StatusMessage></div>}
@@ -345,7 +414,7 @@ export function PhotoAdmin() {
           Albumet er tomt
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+        <div className={`grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 ${mode === "order" && activeMoveId ? "pb-56 sm:pb-0" : ""}`}>
           {photos.map((photo, index) => (
             <AdminPhotoTile
               key={photo.id}
@@ -354,10 +423,11 @@ export function PhotoAdmin() {
               mode={mode}
               isSelected={selectedIds.has(photo.id)}
               isMoveActive={activeMoveId === photo.id}
+              isMoveTarget={moveTargetId === photo.id}
               isDragging={draggedId === photo.id}
               onToggle={() => toggleSelected(photo.id)}
               onPreview={() => setSelectedPhoto(photo)}
-              onChooseMove={() => chooseMovePhoto(photo.id)}
+              onChooseMove={() => chooseMoveTarget(photo.id)}
               onMovePrevious={() => movePhoto(photo.id, index - 1)}
               onMoveNext={() => movePhoto(photo.id, index + 1)}
               onDragStart={() => setDraggedId(photo.id)}
@@ -369,6 +439,22 @@ export function PhotoAdmin() {
             />
           ))}
         </div>
+      )}
+
+      {mode === "order" && activeMoveId && (
+        <MoveControls
+          className="fixed inset-x-0 bottom-0 z-40 flex border-t border-[#D8C9B7] bg-white/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(93,78,55,0.14)] backdrop-blur sm:hidden"
+          photos={photos}
+          activeMoveId={activeMoveId}
+          moveTargetId={moveTargetId}
+          movePosition={movePosition}
+          onMovePositionChange={setMovePosition}
+          onJump={jumpToEnteredPosition}
+          onMoveToPosition={moveToEnteredPosition}
+          onPlaceBefore={() => moveAroundTarget("before")}
+          onPlaceAfter={() => moveAroundTarget("after")}
+          onCancel={cancelMove}
+        />
       )}
 
       {selectedPhoto && (
@@ -389,6 +475,7 @@ function AdminPhotoTile({
   mode,
   isSelected,
   isMoveActive,
+  isMoveTarget,
   isDragging,
   onToggle,
   onPreview,
@@ -404,6 +491,7 @@ function AdminPhotoTile({
   mode: AdminMode;
   isSelected: boolean;
   isMoveActive: boolean;
+  isMoveTarget: boolean;
   isDragging: boolean;
   onToggle: () => void;
   onPreview: () => void;
@@ -417,7 +505,8 @@ function AdminPhotoTile({
   const isVideo = photo.mediaType === "video";
   return (
     <div
-      className={`group relative overflow-hidden rounded-lg border-2 bg-[#E8DED0] transition ${isSelected || isMoveActive ? "border-[#5D4E37] ring-2 ring-[#5D4E37]/20" : "border-transparent"} ${isDragging ? "opacity-40" : "opacity-100"}`}
+      id={`admin-photo-${index + 1}`}
+      className={`group relative overflow-hidden rounded-lg border-2 bg-[#E8DED0] transition [contain-intrinsic-size:0_120px] [content-visibility:auto] ${isSelected || isMoveActive ? "border-[#5D4E37] ring-2 ring-[#5D4E37]/20" : isMoveTarget ? "border-amber-500 ring-2 ring-amber-400/30" : "border-transparent"} ${isDragging ? "opacity-40" : "opacity-100"}`}
       draggable={mode === "order"}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
@@ -459,6 +548,16 @@ function AdminPhotoTile({
             <GripVertical className="h-4 w-4" />
           </span>
         )}
+        {mode === "order" && isMoveActive && (
+          <span className="absolute inset-x-1.5 bottom-1.5 rounded-md bg-[#5D4E37]/90 px-1.5 py-1 text-center text-[11px] font-semibold text-white sm:hidden">
+            Flyttes
+          </span>
+        )}
+        {mode === "order" && isMoveTarget && (
+          <span className="absolute inset-x-1.5 bottom-1.5 rounded-md bg-amber-500/95 px-1.5 py-1 text-center text-[11px] font-semibold text-white">
+            Nytt sted
+          </span>
+        )}
       </button>
 
       <button
@@ -471,13 +570,103 @@ function AdminPhotoTile({
       </button>
 
       {mode === "order" && isMoveActive && (
-        <div className="absolute inset-x-1.5 bottom-1.5 left-1.5 flex w-fit gap-1 rounded-full bg-black/65 p-0.5">
+        <div className="absolute inset-x-1.5 bottom-1.5 left-1.5 hidden w-fit gap-1 rounded-full bg-black/65 p-0.5 sm:flex">
           <button type="button" className="flex h-7 w-7 items-center justify-center rounded-full text-white disabled:opacity-30" onClick={onMovePrevious} disabled={index === 0} aria-label="Flytt én plass bakover">
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button type="button" className="flex h-7 w-7 items-center justify-center rounded-full text-white disabled:opacity-30" onClick={onMoveNext} aria-label="Flytt én plass fremover">
             <ChevronRight className="h-4 w-4" />
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MoveControls({
+  className,
+  photos,
+  activeMoveId,
+  moveTargetId,
+  movePosition,
+  onMovePositionChange,
+  onJump,
+  onMoveToPosition,
+  onPlaceBefore,
+  onPlaceAfter,
+  onCancel,
+}: {
+  className: string;
+  photos: PhotoMetadata[];
+  activeMoveId: string;
+  moveTargetId: string | null;
+  movePosition: string;
+  onMovePositionChange: (value: string) => void;
+  onJump: () => void;
+  onMoveToPosition: () => void;
+  onPlaceBefore: () => void;
+  onPlaceAfter: () => void;
+  onCancel: () => void;
+}) {
+  const movePositionId = useId();
+  const movePositionCountId = useId();
+  const activeIndex = photos.findIndex((photo) => photo.id === activeMoveId);
+  const targetIndex = moveTargetId ? photos.findIndex((photo) => photo.id === moveTargetId) : -1;
+  const activePhoto = activeIndex >= 0 ? photos[activeIndex] : null;
+
+  if (!activePhoto) return null;
+
+  return (
+    <div className={`${className} flex-col gap-3`} aria-label="Kontroller for flytting av bilde">
+      <div className="flex items-center gap-3">
+        <img
+          src={activePhoto.thumbnailUrl || activePhoto.url}
+          alt="Bildet som flyttes"
+          className="h-12 w-12 shrink-0 rounded-lg object-cover ring-2 ring-[#5D4E37]/20"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-[#5D4E37]">Flytter bilde {activeIndex + 1}</p>
+          <p className="text-xs text-[#8B7355]">
+            {targetIndex >= 0 ? `Nytt sted ved bilde ${targetIndex + 1}` : "Trykk på et bilde som skal være ved siden av"}
+          </p>
+        </div>
+        <Button type="button" variant="ghost" size="icon" onClick={onCancel} aria-label="Avbryt flytting">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {targetIndex >= 0 ? (
+        <div className="grid grid-cols-2 gap-2">
+          <Button type="button" variant="outline" onClick={onPlaceBefore}>
+            <ArrowUpToLine className="h-4 w-4" />
+            Plasser før
+          </Button>
+          <Button type="button" onClick={onPlaceAfter}>
+            <ArrowDownToLine className="h-4 w-4" />
+            Plasser etter
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <label htmlFor={movePositionId} className="mb-1 block text-xs font-medium text-[#6D5B45]">
+              Plassering
+            </label>
+            <Input
+              id={movePositionId}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={photos.length}
+              value={movePosition}
+              onChange={(event) => onMovePositionChange(event.target.value)}
+              className="h-10"
+              aria-describedby={movePositionCountId}
+            />
+          </div>
+          <span id={movePositionCountId} className="pb-3 text-xs text-[#8B7355]">av {photos.length}</span>
+          <Button type="button" variant="outline" onClick={onJump}>Hopp</Button>
+          <Button type="button" onClick={onMoveToPosition}>Flytt hit</Button>
         </div>
       )}
     </div>
