@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/cloudflare/media-worker/.wrangler/
 
 # next.js
 /.next/

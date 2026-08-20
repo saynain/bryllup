@@ -23,6 +23,7 @@ interface LoadPhotosOptions {
 
 export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   const archiveUrl = getPhotoArchiveUrl();
+  const [archiveAvailable, setArchiveAvailable] = useState(false);
   const [photos, setPhotos] = useState<PhotoMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -85,6 +86,20 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   }, []);
 
   useEffect(() => {
+    if (!archiveUrl) {
+      setArchiveAvailable(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    fetch(archiveUrl, { method: "HEAD", signal: controller.signal })
+      .then((response) => setArchiveAvailable(response.ok))
+      .catch(() => setArchiveAvailable(false));
+
+    return () => controller.abort();
+  }, [archiveUrl]);
+
+  useEffect(() => {
     setCursor(undefined);
     setHasMore(false);
     loadPhotos();
@@ -137,7 +152,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
 
   return (
     <>
-      {archiveUrl && (
+      {archiveUrl && archiveAvailable && (
         <div className="mb-5 flex flex-col gap-3 rounded-xl border border-[#E8DED0] bg-white/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
             <p className="font-medium text-[#5D4E37]">Vil du beholde alle bildene?</p>

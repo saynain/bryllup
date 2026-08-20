@@ -7,6 +7,7 @@ export interface PhotoMetadata {
   mediaType?: "image" | "video";
   provider?: string;
   status?: "pending" | "processing" | "ready" | "error";
+  displayOrder?: number;
   size: number;
   takenAt?: Date | string;
   uploadedAt: Date | string;

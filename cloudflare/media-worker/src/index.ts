@@ -1,5 +1,5 @@
 type MediaType = "image" | "video";
-type MediaStatus = "pending" | "processing" | "ready" | "error";
+type MediaStatus = "pending" | "processing" | "ready" | "error" | "deleted";
 type UploadMethod = "POST" | "PUT" | "PATCH";
 type UploadProtocol = "form" | "tus" | "r2-multipart";
 type ImageUploadProvider =
@@ -36,6 +36,7 @@ interface AppD1PreparedStatement {
 
 interface AppD1Database {
   prepare(query: string): AppD1PreparedStatement;
+  batch<T = unknown>(statements: AppD1PreparedStatement[]): Promise<T[]>;
 }
 
 interface AppR2Object {
@@ -92,6 +93,7 @@ interface AppR2Bucket {
     }
   ): Promise<AppR2MultipartUpload>;
   resumeMultipartUpload(key: string, uploadId: string): AppR2MultipartUpload;
+  delete(keys: string | string[]): Promise<void>;
 }
 
 interface AppStreamVideo {
@@ -192,6 +194,8 @@ interface Env {
   UPLOAD_TOKEN?: string;
   ARCHIVE_UPLOAD_TOKEN?: string;
   MIGRATION_TOKEN?: string;
+  ADMIN_TOKEN?: string;
+  ADMIN_READ_ONLY?: string;
 }
 
 interface MediaRow {
@@ -214,7 +218,10 @@ interface MediaRow {
   uploaded_at: string | null;
   updated_at: string;
   error: string | null;
-  sort_at?: string;
+  display_order: number | null;
+  deleted_at: string | null;
+  status_before_delete: string | null;
+  sort_at?: number | string;
 }
 
 interface CreateUploadRequest {
@@ -225,6 +232,10 @@ interface CreateUploadRequest {
   uploadedBy?: string;
   uploadMessage?: string;
   takenAt?: string;
+}
+
+interface AdminMediaIdsRequest {
+  ids?: unknown;
 }
 
 interface StreamMigrationRow {
@@ -260,6 +271,8 @@ const DEFAULT_R2_MULTIPART_PART_BYTES = 5 * 1024 * 1024;
 const MAX_VIDEO_THUMBNAIL_BYTES = 1_500_000;
 const DEFAULT_STREAM_BASIC_MAX_BYTES = 190 * 1024 * 1024;
 const DEFAULT_STREAM_MAX_DURATION_SECONDS = 60 * 60;
+const MAX_ADMIN_MEDIA = 2000;
+const MAX_ADMIN_DELETE_BATCH = 100;
 const PHOTO_ARCHIVE_KEY = "archives/silje-og-sindre-bilder.zip";
 const PHOTO_ARCHIVE_FILENAME = "silje-og-sindre-bilder.zip";
 const PHOTO_ARCHIVE_PART_BYTES = 20 * 1024 * 1024;
@@ -281,6 +294,10 @@ export default {
     const path = trimTrailingSlash(url.pathname);
 
     try {
+      if (isAdminReadOnly(env) && !isReadOnlyWorkerRouteAllowed(request, path)) {
+        return json(request, env, { error: "Not found" }, 404);
+      }
+
       if (request.method === "GET" && path === "/health") {
         return json(request, env, { ok: true });
       }
@@ -323,6 +340,26 @@ export default {
       ) {
         requirePhotoArchiveUploadToken(request, env);
         return abortPhotoArchiveUpload(request, env);
+      }
+
+      if (request.method === "GET" && path === "/admin/media") {
+        await requireAdminToken(request, env);
+        return listAdminMedia(request, env);
+      }
+
+      if (request.method === "PATCH" && path === "/admin/media/order") {
+        await requireAdminToken(request, env);
+        return updateAdminMediaOrder(request, env);
+      }
+
+      if (request.method === "DELETE" && path === "/admin/media") {
+        await requireAdminToken(request, env);
+        return softDeleteAdminMedia(request, env);
+      }
+
+      if (request.method === "POST" && path === "/admin/media/restore") {
+        await requireAdminToken(request, env);
+        return restoreAdminMedia(request, env);
       }
 
       if (request.method === "GET" && path === "/admin/stream-migrations") {
@@ -476,7 +513,7 @@ async function listMedia(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const limit = clamp(parseInteger(url.searchParams.get("limit"), 24), 1, 100);
   const cursor = parseMediaCursor(url.searchParams.get("cursor"));
-  const sortExpression = "COALESCE(taken_at, uploaded_at, created_at)";
+  const sortExpression = "COALESCE(display_order, 2147483647)";
 
   const statement = cursor
     ? env.DB.prepare(
@@ -516,9 +553,212 @@ async function listMedia(request: Request, env: Env): Promise<Response> {
   });
 }
 
+async function listAdminMedia(request: Request, env: Env): Promise<Response> {
+  const rows = (
+    await env.DB.prepare(
+      `SELECT *, COALESCE(display_order, 2147483647) AS sort_at
+       FROM media
+       WHERE status IN ('ready', 'processing')
+       ORDER BY COALESCE(display_order, 2147483647) ASC, created_at ASC, id ASC
+       LIMIT ?`
+    )
+      .bind(MAX_ADMIN_MEDIA + 1)
+      .all<MediaRow>()
+  ).results;
+
+  if (rows.length > MAX_ADMIN_MEDIA) {
+    throw new HttpError("Albumet er for stort for administrasjonsvisningen", 409);
+  }
+
+  return json(request, env, {
+    photos: rows.map((row) => toPublicMedia(row, request)),
+    hasMore: false,
+    readOnly: isAdminReadOnly(env),
+  });
+}
+
+async function updateAdminMediaOrder(request: Request, env: Env): Promise<Response> {
+  const ids = await parseAdminMediaIds(request, MAX_ADMIN_MEDIA);
+  const activeIds = (
+    await env.DB.prepare(
+      `SELECT id
+       FROM media
+       WHERE status IN ('ready', 'processing')
+       ORDER BY COALESCE(display_order, 2147483647) ASC, created_at ASC, id ASC`
+    ).all<{ id: string }>()
+  ).results.map((row) => row.id);
+
+  if (!sameStringSet(ids, activeIds)) {
+    throw new HttpError(
+      "Albumet har blitt endret. Last inn siden på nytt før du lagrer rekkefølgen.",
+      409
+    );
+  }
+
+  if (isAdminReadOnly(env)) {
+    return json(request, env, { success: true, count: ids.length, dryRun: true });
+  }
+
+  const now = new Date().toISOString();
+  await env.DB.batch(
+    ids.map((id, index) =>
+      env.DB.prepare(
+        `UPDATE media
+         SET display_order = ?, updated_at = ?
+         WHERE id = ? AND status IN ('ready', 'processing')`
+      ).bind(index * 10, now, id)
+    )
+  );
+
+  return json(request, env, { success: true, count: ids.length });
+}
+
+async function softDeleteAdminMedia(request: Request, env: Env): Promise<Response> {
+  const ids = await parseAdminMediaIds(request, MAX_ADMIN_DELETE_BATCH);
+  const existingIds = await findActiveMediaIds(env, ids);
+
+  if (existingIds.length !== ids.length) {
+    throw new HttpError(
+      "Ett eller flere bilder finnes ikke lenger. Last inn siden på nytt.",
+      409
+    );
+  }
+
+  if (isAdminReadOnly(env)) {
+    return json(request, env, {
+      success: true,
+      deletedIds: ids,
+      archiveInvalidated: false,
+      dryRun: true,
+    });
+  }
+
+  const now = new Date().toISOString();
+  await env.DB.batch(
+    ids.map((id) =>
+      env.DB.prepare(
+        `UPDATE media
+         SET status_before_delete = status, status = 'deleted', deleted_at = ?, updated_at = ?
+         WHERE id = ? AND status IN ('ready', 'processing')`
+      ).bind(now, now, id)
+    )
+  );
+
+  // The archive may still contain removed photos. Make it unavailable until it is rebuilt.
+  await env.MEDIA_BUCKET.delete(PHOTO_ARCHIVE_KEY);
+
+  return json(request, env, {
+    success: true,
+    deletedIds: ids,
+    archiveInvalidated: true,
+  });
+}
+
+async function restoreAdminMedia(request: Request, env: Env): Promise<Response> {
+  const ids = await parseAdminMediaIds(request, MAX_ADMIN_DELETE_BATCH);
+  if (isAdminReadOnly(env)) {
+    return json(request, env, { success: true, restoredIds: ids, dryRun: true });
+  }
+
+  const placeholders = ids.map(() => "?").join(", ");
+  const deletedIds = (
+    await env.DB.prepare(
+      `SELECT id FROM media WHERE status = 'deleted' AND id IN (${placeholders})`
+    )
+      .bind(...ids)
+      .all<{ id: string }>()
+  ).results.map((row) => row.id);
+
+  if (deletedIds.length !== ids.length) {
+    throw new HttpError("Ett eller flere bilder kan ikke gjenopprettes.", 409);
+  }
+
+  const now = new Date().toISOString();
+  await env.DB.batch(
+    ids.map((id) =>
+      env.DB.prepare(
+        `UPDATE media
+         SET status = CASE
+               WHEN status_before_delete IN ('ready', 'processing') THEN status_before_delete
+               ELSE 'ready'
+             END,
+             status_before_delete = NULL,
+             deleted_at = NULL,
+             updated_at = ?
+         WHERE id = ? AND status = 'deleted'`
+      ).bind(now, id)
+    )
+  );
+
+  return json(request, env, { success: true, restoredIds: ids });
+}
+
+async function parseAdminMediaIds(request: Request, maxItems: number): Promise<string[]> {
+  const body = (await request.json()) as AdminMediaIdsRequest;
+  if (!Array.isArray(body.ids)) {
+    throw new HttpError("Mangler bildeliste", 400);
+  }
+
+  const ids = body.ids.filter(
+    (id): id is string => typeof id === "string" && id.length > 0 && id.length <= 200
+  );
+
+  if (ids.length === 0 || ids.length !== body.ids.length || ids.length > maxItems) {
+    throw new HttpError("Ugyldig bildeliste", 400);
+  }
+
+  if (new Set(ids).size !== ids.length) {
+    throw new HttpError("Bildelisten inneholder duplikater", 400);
+  }
+
+  return ids;
+}
+
+async function findActiveMediaIds(env: Env, ids: string[]): Promise<string[]> {
+  const placeholders = ids.map(() => "?").join(", ");
+  return (
+    await env.DB.prepare(
+      `SELECT id
+       FROM media
+       WHERE status IN ('ready', 'processing') AND id IN (${placeholders})`
+    )
+      .bind(...ids)
+      .all<{ id: string }>()
+  ).results.map((row) => row.id);
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
+}
+
+function isAdminReadOnly(env: Env): boolean {
+  return env.ADMIN_READ_ONLY?.trim().toLowerCase() === "true";
+}
+
+function isReadOnlyWorkerRouteAllowed(request: Request, path: string): boolean {
+  if (path.startsWith("/admin/media")) {
+    return true;
+  }
+
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    return false;
+  }
+
+  return (
+    path === "/health" ||
+    path === "/media" ||
+    path.startsWith("/media/") ||
+    path === "/downloads/photos.zip"
+  );
+}
+
 async function getMedia(request: Request, env: Env, id: string): Promise<Response> {
   const row = await findMedia(env, id);
-  if (!row) {
+  if (!row || row.status === "deleted") {
     return json(request, env, { error: "Media not found" }, 404);
   }
 
@@ -1787,7 +2027,7 @@ async function getR2Content(
   disposition: "inline" | "attachment" = "inline"
 ): Promise<Response> {
   const row = await findMedia(env, id);
-  if (!row || !row.object_key) {
+  if (!row || row.status === "deleted" || !row.object_key) {
     return json(request, env, { error: "Media not found" }, 404);
   }
 
@@ -1851,7 +2091,7 @@ async function getR2Thumbnail(
   ctx?: AppExecutionContext
 ): Promise<Response> {
   const row = await findMedia(env, id);
-  if (!row) {
+  if (!row || row.status === "deleted") {
     return json(request, env, { error: "Thumbnail not found" }, 404);
   }
 
@@ -1897,20 +2137,21 @@ async function getR2ImageVariant(
   ctx?: AppExecutionContext,
   knownRow?: MediaRow
 ): Promise<Response> {
-  const cached = await matchImmutableMediaCache(request);
-  if (cached) {
-    return cached;
-  }
-
   const row = knownRow || (await findMedia(env, id));
   if (
     !row ||
+    row.status === "deleted" ||
     row.media_type !== "image" ||
     !isR2Provider(row.provider) ||
     !row.object_key ||
     !env.IMAGES
   ) {
     return json(request, env, { error: "Image variant is not available" }, 404);
+  }
+
+  const cached = await matchImmutableMediaCache(request);
+  if (cached) {
+    return cached;
   }
 
   const object = await env.MEDIA_BUCKET.get(row.object_key);
@@ -1954,12 +2195,17 @@ async function getR2ImageVariant(
 
 async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
   const now = new Date().toISOString();
+  const orderRow = await env.DB.prepare(
+    "SELECT COALESCE(MAX(display_order), -10) + 10 AS next_order FROM media"
+  ).first<{ next_order: number }>();
+  const displayOrder = orderRow?.next_order ?? 0;
+
   await env.DB.prepare(
     `INSERT INTO media (
       id, provider, media_type, status, filename, original_name, mime_type, size,
       uploaded_by, upload_message, object_key, provider_id, url, thumbnail_url, taken_at,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      created_at, updated_at, display_order
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       input.id,
@@ -1978,7 +2224,8 @@ async function insertMedia(env: Env, input: MediaInsertInput): Promise<void> {
       input.thumbnailUrl || null,
       input.takenAt || null,
       now,
-      now
+      now,
+      displayOrder
     )
     .run();
 }
@@ -2045,6 +2292,7 @@ function toPublicMedia(row: MediaRow, request: Request) {
     provider: row.provider,
     status: row.status,
     size: row.size,
+    displayOrder: row.display_order ?? undefined,
     takenAt: row.taken_at || undefined,
     uploadedAt: row.uploaded_at || row.created_at,
     uploadedBy: row.uploaded_by || undefined,
@@ -2279,7 +2527,7 @@ function encodeMediaCursor(row: MediaRow | undefined): string | undefined {
     return undefined;
   }
 
-  const sortAt = row.sort_at || row.taken_at || row.uploaded_at || row.created_at;
+  const sortAt = row.sort_at ?? row.display_order ?? 2147483647;
   return `${sortAt}|${row.created_at}|${row.id}`;
 }
 
@@ -2289,7 +2537,7 @@ function parseMediaCursor(value: string | null): MediaCursor | null {
   }
 
   const [sortAt, createdAt, id] = value.split("|", 3);
-  if (!sortAt || !createdAt || !id) {
+  if (!sortAt || !createdAt || !id || !Number.isFinite(Number(sortAt))) {
     return null;
   }
 
@@ -2348,6 +2596,23 @@ async function requireMigrationToken(request: Request, env: Env): Promise<void> 
   }
 }
 
+async function requireAdminToken(request: Request, env: Env): Promise<void> {
+  if (!env.ADMIN_TOKEN) {
+    throw new HttpError("Administrasjon er ikke konfigurert", 503);
+  }
+
+  const provided = request.headers.get("X-Admin-Token") || "";
+  const encoder = new TextEncoder();
+  const [providedHash, expectedHash] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(provided)),
+    crypto.subtle.digest("SHA-256", encoder.encode(env.ADMIN_TOKEN)),
+  ]);
+  const subtle = crypto.subtle as AppSubtleCrypto;
+  if (!subtle.timingSafeEqual(providedHash, expectedHash)) {
+    throw new HttpError("Ugyldig administratorpassord", 401);
+  }
+}
+
 function corsHeaders(request: Request, env: Env): Headers {
   const headers = new Headers();
   const origin = request.headers.get("Origin");
@@ -2364,7 +2629,7 @@ function corsHeaders(request: Request, env: Env): Headers {
   headers.set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS");
   headers.set(
     "Access-Control-Allow-Headers",
-    "Content-Type, X-Upload-Token, Tus-Resumable, Upload-Length, Upload-Metadata, Upload-Offset"
+    "Content-Type, X-Admin-Token, X-Upload-Token, Tus-Resumable, Upload-Length, Upload-Metadata, Upload-Offset"
   );
   headers.set(
     "Access-Control-Expose-Headers",
