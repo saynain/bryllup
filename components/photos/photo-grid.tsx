@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { startTransition, useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Download, RefreshCw } from "lucide-react";
 import { PhotoCard } from "./photo-card";
@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { fetchMediaList, getPhotoArchiveUrl } from "@/lib/media/client";
 import type { PhotoMetadata } from "@/lib/storage/types";
 
-const GALLERY_PAGE_SIZE = 36;
+const INITIAL_GALLERY_PAGE_SIZE = 36;
+const BACKGROUND_GALLERY_PAGE_SIZE = 100;
 
 interface PhotoGridProps {
   refreshTrigger?: number;
@@ -31,6 +32,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   const [hasMore, setHasMore] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   const loadPhotos = useCallback(async ({
     loadMore = false,
@@ -39,21 +41,35 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
     try {
       if (loadMore) {
         setLoadingMore(true);
+        setLoadMoreError(null);
       } else {
         setLoading(true);
+        setError(null);
       }
-      setError(null);
 
       const data = await fetchMediaList({
-        limit: GALLERY_PAGE_SIZE,
+        limit: loadMore
+          ? BACKGROUND_GALLERY_PAGE_SIZE
+          : INITIAL_GALLERY_PAGE_SIZE,
         cursor: loadMore ? cursorOverride : undefined,
       });
 
-      setPhotos((prev) => (loadMore ? [...prev, ...data.photos] : data.photos));
+      if (loadMore) {
+        startTransition(() => {
+          setPhotos((prev) => [...prev, ...data.photos]);
+        });
+      } else {
+        setPhotos(data.photos);
+      }
       setCursor(data.nextCursor);
       setHasMore(data.hasMore);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Noe gikk galt");
+      const message = err instanceof Error ? err.message : "Noe gikk galt";
+      if (loadMore) {
+        setLoadMoreError(message);
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -102,8 +118,21 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   useEffect(() => {
     setCursor(undefined);
     setHasMore(false);
+    setLoadMoreError(null);
     loadPhotos();
   }, [refreshTrigger, loadPhotos]);
+
+  useEffect(() => {
+    if (loading || loadingMore || !hasMore || !cursor || loadMoreError) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      loadPhotos({ loadMore: true, cursorOverride: cursor });
+    }, 100);
+
+    return () => window.clearTimeout(timer);
+  }, [cursor, hasMore, loadMoreError, loading, loadingMore, loadPhotos]);
 
   if (loading) {
     return (
@@ -180,24 +209,30 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
         ))}
       </div>
 
-      {/* Load more button */}
-      {hasMore && (
-        <div className="flex justify-center mt-8">
-          <Button
-            variant="outline"
-            onClick={() => loadPhotos({ loadMore: true, cursorOverride: cursor })}
-            disabled={loadingMore}
-            className="h-12 px-8"
-          >
-            {loadingMore ? (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Laster...
-              </>
-            ) : (
-              "Last inn flere bilder"
-            )}
-          </Button>
+      {(hasMore || loadingMore || loadMoreError) && (
+        <div
+          className="mt-6 flex min-h-12 items-center justify-center gap-3 text-sm text-[#8B7355]"
+          aria-live="polite"
+        >
+          {loadMoreError ? (
+            <>
+              <span>Resten av galleriet kunne ikke lastes inn.</span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  loadPhotos({ loadMore: true, cursorOverride: cursor })
+                }
+              >
+                Prøv igjen
+              </Button>
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <span>Laster inn resten av galleriet …</span>
+            </>
+          )}
         </div>
       )}
 
