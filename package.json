@@ -11,8 +11,7 @@
     "cf:media:dev": "npx wrangler dev --config cloudflare/media-worker/wrangler.toml",
     "cf:media:deploy": "npx wrangler deploy --config cloudflare/media-worker/wrangler.toml",
     "cf:media:migrate": "npx wrangler d1 migrations apply bryllup-media --remote --config cloudflare/media-worker/wrangler.toml",
-    "media:archive": "node --env-file=.env.local scripts/build-photo-archive.mjs",
-    "cf:media:archive": "node --env-file=.env.local scripts/build-photo-archive.mjs --upload --configure-upload-secret",
+    "media:archive": "node --env-file=.env.local scripts/build-photo-archive.mjs --all-types",
     "cf:media:stream-migrate": "node --env-file=.env.local scripts/migrate-videos-to-stream.mjs"
   },
   "keywords": [],

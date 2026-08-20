@@ -2,18 +2,42 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdir, open, rm, stat } from "node:fs/promises";
 import path from "node:path";
+import {
+  createZipCentralDirectory,
+  MAX_ZIP32_VALUE,
+} from "./media-archive-zip.mjs";
 
-const DEFAULT_OUTPUT = "output/media-archive/silje-og-sindre-bilder.zip";
+const ARCHIVES = {
+  photos: {
+    mediaType: "image",
+    output: "output/media-archive/silje-og-sindre-bilder.zip",
+    directory: "Silje og Sindre - Bilder",
+    label: "bilder",
+  },
+  videos: {
+    mediaType: "video",
+    output: "output/media-archive/silje-og-sindre-videoer.zip",
+    directory: "Silje og Sindre - Videoer",
+    label: "videoer",
+  },
+};
 const UTF8_DATA_DESCRIPTOR_FLAG = 0x0808;
 const STORE_METHOD = 0;
-const MAX_ZIP32_VALUE = 0xffffffff;
 const CRC32_TABLE = createCrc32Table();
 
 const options = parseArguments(process.argv.slice(2));
 const apiUrl = (
   options.apiUrl || process.env.NEXT_PUBLIC_MEDIA_API_URL || ""
 ).replace(/\/$/, "");
-const outputPath = path.resolve(options.output || DEFAULT_OUTPUT);
+const archiveKinds = options.allTypes ? ["photos", "videos"] : [options.type || "photos"];
+
+if (options.output && archiveKinds.length !== 1) {
+  throw new Error("--output kan bare brukes sammen med én arkivtype.");
+}
+
+if ((options.uploadExisting || options.verifyExisting) && archiveKinds.length !== 1) {
+  throw new Error("Eksisterende ZIP kan bare brukes sammen med én arkivtype.");
+}
 
 if (!apiUrl) {
   throw new Error(
@@ -21,28 +45,9 @@ if (!apiUrl) {
   );
 }
 
-let archiveStats;
-if (options.uploadExisting) {
-  archiveStats = await stat(outputPath);
-  console.log(`Bruker eksisterende ZIP: ${outputPath} (${formatBytes(archiveStats.size)})`);
-} else {
-  const photos = await listPhotos(apiUrl, options.limit);
-  if (photos.length === 0) {
-    throw new Error("Fant ingen bilder å legge i arkivet.");
-  }
-
-  await mkdir(path.dirname(outputPath), { recursive: true });
-  await rm(outputPath, { force: true });
-
-  console.log(`Lager ZIP med ${photos.length} originalbilder …`);
-  await buildZipArchive(photos, outputPath);
-
-  archiveStats = await stat(outputPath);
-  console.log(`Ferdig: ${outputPath} (${formatBytes(archiveStats.size)})`);
-}
-
+let uploadToken;
 if (options.upload) {
-  let uploadToken =
+  uploadToken =
     process.env.ARCHIVE_UPLOAD_TOKEN || process.env.NEXT_PUBLIC_MEDIA_UPLOAD_TOKEN;
   if (!uploadToken && options.configureUploadSecret) {
     uploadToken = await configureArchiveUploadSecret();
@@ -52,7 +57,44 @@ if (options.upload) {
       "Mangler ARCHIVE_UPLOAD_TOKEN eller NEXT_PUBLIC_MEDIA_UPLOAD_TOKEN for opplasting av arkivet."
     );
   }
-  await uploadArchive(apiUrl, uploadToken, outputPath, archiveStats.size);
+}
+
+for (const kind of archiveKinds) {
+  const archive = ARCHIVES[kind];
+  const outputPath = path.resolve(options.output || archive.output);
+  const media = await listMedia(apiUrl, archive.mediaType, options.limit);
+  if (media.length === 0) {
+    throw new Error(`Fant ingen ${archive.label} å legge i arkivet.`);
+  }
+
+  let archiveStats;
+  let manifestEntries;
+
+  if (options.manifestOnly) {
+    archiveStats = await stat(outputPath);
+    console.log(`Leser ZIP-oversikt: ${outputPath} (${formatBytes(archiveStats.size)})`);
+    manifestEntries = await readZipManifest(outputPath, media);
+  } else if (options.uploadExisting || options.verifyExisting) {
+    archiveStats = await stat(outputPath);
+    console.log(`Bruker eksisterende ZIP: ${outputPath} (${formatBytes(archiveStats.size)})`);
+    manifestEntries = await readZipManifest(outputPath, media);
+  } else {
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await rm(outputPath, { force: true });
+
+    console.log(`Lager ZIP med ${media.length} originale ${archive.label} …`);
+    manifestEntries = await buildZipArchive(media, outputPath, archive.directory);
+
+    archiveStats = await stat(outputPath);
+    console.log(`Ferdig: ${outputPath} (${formatBytes(archiveStats.size)})`);
+  }
+
+  if (options.upload) {
+    if (!options.manifestOnly && !options.skipArchiveUpload) {
+      await uploadArchive(apiUrl, uploadToken, outputPath, archiveStats.size, kind);
+    }
+    await uploadArchiveManifest(apiUrl, uploadToken, kind, manifestEntries);
+  }
 }
 
 async function configureArchiveUploadSecret() {
@@ -86,8 +128,8 @@ async function configureArchiveUploadSecret() {
   return token;
 }
 
-async function listPhotos(baseUrl, maximum) {
-  const photos = [];
+async function listMedia(baseUrl, mediaType, maximum) {
+  const media = [];
   let cursor;
 
   do {
@@ -103,11 +145,16 @@ async function listPhotos(baseUrl, maximum) {
     }
 
     const page = await response.json();
-    for (const photo of page.photos || []) {
-      if (photo.mediaType === "image" && photo.status === "ready") {
-        photos.push(photo);
-        if (maximum && photos.length >= maximum) {
-          return photos;
+    for (const item of page.photos || []) {
+      const originalIsAvailable = item.downloadUrl || item.mediaType === "image";
+      if (
+        item.mediaType === mediaType &&
+        (item.status === "ready" || item.status === "processing") &&
+        originalIsAvailable
+      ) {
+        media.push(item);
+        if (maximum && media.length >= maximum) {
+          return media;
         }
       }
     }
@@ -115,21 +162,21 @@ async function listPhotos(baseUrl, maximum) {
     cursor = page.hasMore ? page.nextCursor : undefined;
   } while (cursor);
 
-  return photos;
+  return media;
 }
 
-async function buildZipArchive(photos, destination) {
+async function buildZipArchive(media, destination, directory) {
   const file = await open(destination, "w");
   const entries = [];
   const usedNames = new Map();
   let offset = 0;
 
   try {
-    for (const [index, photo] of photos.entries()) {
-      const filename = uniqueArchiveName(photo, usedNames);
-      const filenameBytes = Buffer.from(`Silje og Sindre/${filename}`, "utf8");
+    for (const [index, item] of media.entries()) {
+      const filename = uniqueArchiveName(item, usedNames);
+      const filenameBytes = Buffer.from(`${directory}/${filename}`, "utf8");
       const entryOffset = offset;
-      const timestamp = zipTimestamp(photo.takenAt || photo.uploadedAt);
+      const timestamp = zipTimestamp(item.takenAt || item.uploadedAt);
 
       const localHeader = Buffer.alloc(30);
       localHeader.writeUInt32LE(0x04034b50, 0);
@@ -143,24 +190,19 @@ async function buildZipArchive(photos, destination) {
       offset += await writeAll(file, localHeader, offset);
       offset += await writeAll(file, filenameBytes, offset);
 
-      const sourceUrl = photo.downloadUrl || photo.url;
-      const response = await fetchWithRetry(sourceUrl, {}, `bilde ${index + 1}`);
-      if (!response.body) {
-        throw new Error(`Bildet ${photo.originalName || photo.filename} mangler innhold.`);
-      }
+      const sourceUrl = item.downloadUrl || item.url;
+      const streamed = await streamMediaContent(
+        sourceUrl,
+        file,
+        offset,
+        `mediefil ${index + 1}`
+      );
+      const size = streamed.size;
+      const crc = streamed.crc;
+      offset = streamed.offset;
 
-      let crc = 0xffffffff;
-      let size = 0;
-      for await (const value of response.body) {
-        const chunk = Buffer.from(value);
-        crc = updateCrc32(crc, chunk);
-        size += chunk.length;
-        offset += await writeAll(file, chunk, offset);
-      }
-      crc = (crc ^ 0xffffffff) >>> 0;
-
-      if (size > MAX_ZIP32_VALUE || entryOffset > MAX_ZIP32_VALUE) {
-        throw new Error("Arkivet har blitt for stort for ZIP32-formatet.");
+      if (size > MAX_ZIP32_VALUE) {
+        throw new Error("En enkelt fil er for stor for arkivformatet.");
       }
 
       const descriptor = Buffer.alloc(16);
@@ -174,52 +216,23 @@ async function buildZipArchive(photos, destination) {
         crc,
         date: timestamp.date,
         filenameBytes,
+        flags: UTF8_DATA_DESCRIPTOR_FLAG,
+        id: item.id,
+        method: STORE_METHOD,
         offset: entryOffset,
         size,
         time: timestamp.time,
       });
 
       console.log(
-        `[${index + 1}/${photos.length}] ${filename} (${formatBytes(size)})`
+        `[${index + 1}/${media.length}] ${filename} (${formatBytes(size)})`
       );
     }
 
-    const centralDirectoryOffset = offset;
-    for (const entry of entries) {
-      const centralHeader = Buffer.alloc(46);
-      centralHeader.writeUInt32LE(0x02014b50, 0);
-      centralHeader.writeUInt16LE(0x0314, 4);
-      centralHeader.writeUInt16LE(20, 6);
-      centralHeader.writeUInt16LE(UTF8_DATA_DESCRIPTOR_FLAG, 8);
-      centralHeader.writeUInt16LE(STORE_METHOD, 10);
-      centralHeader.writeUInt16LE(entry.time, 12);
-      centralHeader.writeUInt16LE(entry.date, 14);
-      centralHeader.writeUInt32LE(entry.crc, 16);
-      centralHeader.writeUInt32LE(entry.size, 20);
-      centralHeader.writeUInt32LE(entry.size, 24);
-      centralHeader.writeUInt16LE(entry.filenameBytes.length, 28);
-      centralHeader.writeUInt32LE(entry.offset, 42);
-
-      offset += await writeAll(file, centralHeader, offset);
-      offset += await writeAll(file, entry.filenameBytes, offset);
+    const centralDirectory = createZipCentralDirectory(entries, offset);
+    for (const chunk of centralDirectory.chunks) {
+      offset += await writeAll(file, chunk, offset);
     }
-
-    const centralDirectorySize = offset - centralDirectoryOffset;
-    if (
-      entries.length > 0xffff ||
-      centralDirectoryOffset > MAX_ZIP32_VALUE ||
-      centralDirectorySize > MAX_ZIP32_VALUE
-    ) {
-      throw new Error("Arkivet har blitt for stort for ZIP32-formatet.");
-    }
-
-    const endRecord = Buffer.alloc(22);
-    endRecord.writeUInt32LE(0x06054b50, 0);
-    endRecord.writeUInt16LE(entries.length, 8);
-    endRecord.writeUInt16LE(entries.length, 10);
-    endRecord.writeUInt32LE(centralDirectorySize, 12);
-    endRecord.writeUInt32LE(centralDirectoryOffset, 16);
-    await writeAll(file, endRecord, offset);
   } catch (error) {
     await file.close();
     await rm(destination, { force: true });
@@ -227,12 +240,17 @@ async function buildZipArchive(photos, destination) {
   }
 
   await file.close();
+  return entries.map((entry) => ({
+    crc32: entry.crc,
+    id: entry.id,
+    size: entry.size,
+  }));
 }
 
-async function uploadArchive(baseUrl, token, sourcePath, totalBytes) {
+async function uploadArchive(baseUrl, token, sourcePath, totalBytes, kind) {
   console.log("Starter delt opplasting til R2 …");
   const upload = await requestJson(
-    `${baseUrl}/downloads/photos.zip/upload`,
+    `${baseUrl}/downloads/${kind}.zip/upload`,
     {
       method: "POST",
       headers: { "X-Upload-Token": token },
@@ -240,33 +258,48 @@ async function uploadArchive(baseUrl, token, sourcePath, totalBytes) {
     "starte arkivopplasting"
   );
 
-  const partSize = Math.max(Number(upload.partSize) || 0, 5 * 1024 * 1024);
+  const partSize = Math.max(Number(upload.partSize) || 0, 50 * 1024 * 1024);
   const partCount = Math.ceil(totalBytes / partSize);
-  const parts = [];
+  const parts = new Array(partCount);
   const file = await open(sourcePath, "r");
 
   try {
-    for (let partNumber = 1; partNumber <= partCount; partNumber++) {
-      const start = (partNumber - 1) * partSize;
-      const length = Math.min(partSize, totalBytes - start);
-      const buffer = Buffer.allocUnsafe(length);
-      await readAll(file, buffer, start);
+    let nextPartNumber = 1;
+    let completedParts = 0;
+    const uploadNextParts = async () => {
+      while (true) {
+        const partNumber = nextPartNumber++;
+        if (partNumber > partCount) return;
 
-      const part = await requestJson(
-        `${upload.uploadPartsUrl}/${partNumber}?uploadId=${encodeURIComponent(upload.uploadId)}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/octet-stream",
-            "X-Upload-Token": token,
+        const start = (partNumber - 1) * partSize;
+        const length = Math.min(partSize, totalBytes - start);
+        const buffer = Buffer.allocUnsafe(length);
+        await readAll(file, buffer, start);
+
+        const part = await requestJson(
+          `${upload.uploadPartsUrl}/${partNumber}?uploadId=${encodeURIComponent(upload.uploadId)}`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/octet-stream",
+              "X-Upload-Token": token,
+            },
+            body: buffer,
           },
-          body: buffer,
-        },
-        `laste opp arkivdel ${partNumber}`
-      );
-      parts.push({ etag: part.etag, partNumber: part.partNumber });
-      console.log(`[${partNumber}/${partCount}] arkivdel lastet opp`);
-    }
+          `laste opp arkivdel ${partNumber}`
+        );
+        parts[partNumber - 1] = {
+          etag: part.etag,
+          partNumber: part.partNumber,
+        };
+        completedParts += 1;
+        console.log(`[${completedParts}/${partCount}] arkivdel lastet opp`);
+      }
+    };
+
+    await Promise.all(
+      Array.from({ length: Math.min(4, partCount) }, () => uploadNextParts())
+    );
 
     const result = await requestJson(
       upload.completeUrl,
@@ -292,6 +325,111 @@ async function uploadArchive(baseUrl, token, sourcePath, totalBytes) {
   }
 }
 
+async function uploadArchiveManifest(baseUrl, token, kind, entries) {
+  const result = await requestJson(
+    `${baseUrl}/downloads/${kind}.zip/manifest`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Upload-Token": token,
+      },
+      body: JSON.stringify({ entries, kind, version: 1 }),
+    },
+    `laste opp ${kind}-oversikten`
+  );
+  console.log(`Nedlastingsoversikt lastet opp: ${result.count} filer`);
+}
+
+async function readZipManifest(sourcePath, media) {
+  const file = await open(sourcePath, "r");
+  try {
+    const archiveStats = await file.stat();
+    const tailLength = Math.min(archiveStats.size, 65_557);
+    const tail = Buffer.alloc(tailLength);
+    await readAll(file, tail, archiveStats.size - tailLength);
+
+    let endIndex = -1;
+    for (let index = tail.length - 22; index >= 0; index--) {
+      if (tail.readUInt32LE(index) === 0x06054b50) {
+        endIndex = index;
+        break;
+      }
+    }
+    if (endIndex < 0) {
+      throw new Error("Fant ikke slutten på ZIP-arkivet.");
+    }
+
+    const endOffset = archiveStats.size - tailLength + endIndex;
+    let entryCount = tail.readUInt16LE(endIndex + 10);
+    let centralDirectorySize = tail.readUInt32LE(endIndex + 12);
+    let centralDirectoryOffset = tail.readUInt32LE(endIndex + 16);
+
+    if (
+      entryCount === 0xffff ||
+      centralDirectorySize === 0xffffffff ||
+      centralDirectoryOffset === 0xffffffff
+    ) {
+      const locator = Buffer.alloc(20);
+      await readAll(file, locator, endOffset - locator.length);
+      if (locator.readUInt32LE(0) !== 0x07064b50) {
+        throw new Error("Fant ikke ZIP64-locatoren.");
+      }
+      const zip64EndOffset = safeZip64Number(locator.readBigUInt64LE(8));
+      const zip64End = Buffer.alloc(56);
+      await readAll(file, zip64End, zip64EndOffset);
+      if (zip64End.readUInt32LE(0) !== 0x06064b50) {
+        throw new Error("Fant ikke ZIP64-sluttposten.");
+      }
+      entryCount = safeZip64Number(zip64End.readBigUInt64LE(32));
+      centralDirectorySize = safeZip64Number(zip64End.readBigUInt64LE(40));
+      centralDirectoryOffset = safeZip64Number(zip64End.readBigUInt64LE(48));
+    }
+
+    if (entryCount !== media.length || centralDirectorySize > 10 * 1024 * 1024) {
+      throw new Error(
+        `ZIP-oversikten har ${entryCount} filer, men albumet har ${media.length}.`
+      );
+    }
+
+    const directory = Buffer.alloc(centralDirectorySize);
+    await readAll(file, directory, centralDirectoryOffset);
+    const manifest = [];
+    let offset = 0;
+
+    for (let index = 0; index < entryCount; index++) {
+      if (directory.readUInt32LE(offset) !== 0x02014b50) {
+        throw new Error(`Ugyldig ZIP-oppføring ${index + 1}.`);
+      }
+      const crc32 = directory.readUInt32LE(offset + 16);
+      const size = directory.readUInt32LE(offset + 24);
+      const filenameLength = directory.readUInt16LE(offset + 28);
+      const extraLength = directory.readUInt16LE(offset + 30);
+      const commentLength = directory.readUInt16LE(offset + 32);
+      const item = media[index];
+      if (size !== item.size) {
+        throw new Error(
+          `Størrelsen på ZIP-oppføring ${index + 1} stemmer ikke med albumet.`
+        );
+      }
+      manifest.push({ crc32, id: item.id, size });
+      offset += 46 + filenameLength + extraLength + commentLength;
+    }
+
+    return manifest;
+  } finally {
+    await file.close();
+  }
+}
+
+function safeZip64Number(value) {
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number < 0) {
+    throw new Error("ZIP64-verdien er for stor.");
+  }
+  return number;
+}
+
 async function requestJson(url, init, description) {
   const response = await fetchWithRetry(url, init, description);
   const payload = await response.json().catch(() => null);
@@ -299,6 +437,112 @@ async function requestJson(url, init, description) {
     throw new Error(`Kunne ikke ${description}: ugyldig svar fra serveren.`);
   }
   return payload;
+}
+
+async function streamMediaContent(sourceUrl, file, initialOffset, description) {
+  const maximumAttempts = 8;
+  let crc = 0xffffffff;
+  let size = 0;
+  let offset = initialOffset;
+  let totalSize;
+  let lastError;
+
+  for (let attempt = 1; attempt <= maximumAttempts; attempt++) {
+    const response = await fetchWithRetry(
+      sourceUrl,
+      size > 0 ? { headers: { Range: `bytes=${size}-` } } : {},
+      description
+    );
+
+    if (!response.body) {
+      throw new Error(`${description} mangler innhold.`);
+    }
+
+    if (size > 0) {
+      const contentRange = parseContentRange(response.headers.get("Content-Range"));
+      if (response.status !== 206 || !contentRange || contentRange.start !== size) {
+        throw new Error(`${description} kunne ikke gjenopptas fra byte ${size}.`);
+      }
+      totalSize = totalSize ?? contentRange.total;
+    } else {
+      const contentLength = Number(response.headers.get("Content-Length"));
+      if (Number.isSafeInteger(contentLength) && contentLength >= 0) {
+        totalSize = contentLength;
+      }
+    }
+
+    const expectedResponseBytes = Number(response.headers.get("Content-Length"));
+    let responseBytes = 0;
+
+    try {
+      for await (const value of response.body) {
+        const chunk = Buffer.from(value);
+        crc = updateCrc32(crc, chunk);
+        size += chunk.length;
+        responseBytes += chunk.length;
+        offset += await writeAll(file, chunk, offset);
+      }
+    } catch (error) {
+      lastError = error;
+      if (totalSize !== undefined && size === totalSize) {
+        return { crc: (crc ^ 0xffffffff) >>> 0, size, offset };
+      }
+      if (attempt === maximumAttempts) {
+        throw error;
+      }
+      console.warn(
+        `${description}: forbindelsen ble brutt etter ${formatBytes(size)}; fortsetter fra siste byte (forsøk ${attempt + 1}/${maximumAttempts}) …`
+      );
+      await waitBeforeRetry(attempt);
+      continue;
+    }
+
+    const responseWasTruncated =
+      Number.isSafeInteger(expectedResponseBytes) &&
+      expectedResponseBytes >= 0 &&
+      responseBytes !== expectedResponseBytes;
+    const fileIsIncomplete = totalSize !== undefined && size !== totalSize;
+    if (responseWasTruncated || fileIsIncomplete) {
+      lastError = new Error(`${description} ble avkortet etter ${formatBytes(size)}.`);
+      if (attempt === maximumAttempts) {
+        throw lastError;
+      }
+      console.warn(
+        `${description}: ufullstendig svar etter ${formatBytes(size)}; fortsetter fra siste byte (forsøk ${attempt + 1}/${maximumAttempts}) …`
+      );
+      await waitBeforeRetry(attempt);
+      continue;
+    }
+
+    return { crc: (crc ^ 0xffffffff) >>> 0, size, offset };
+  }
+
+  throw lastError || new Error(`${description} kunne ikke lastes ned.`);
+}
+
+function parseContentRange(value) {
+  const match = value?.match(/^bytes (\d+)-(\d+)\/(\d+)$/);
+  if (!match) return null;
+
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  const total = Number(match[3]);
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(end) ||
+    !Number.isSafeInteger(total) ||
+    start < 0 ||
+    end < start ||
+    total <= end
+  ) {
+    return null;
+  }
+
+  return { start, end, total };
+}
+
+async function waitBeforeRetry(attempt) {
+  await new Promise((resolve) => setTimeout(resolve, Math.min(attempt, 5) * 1000));
 }
 
 async function fetchWithRetry(url, init, description) {
@@ -331,9 +575,12 @@ async function fetchWithRetry(url, init, description) {
   throw lastError;
 }
 
-function uniqueArchiveName(photo, usedNames) {
-  const fallbackExtension = extensionForMimeType(photo.mimeType);
-  const source = String(photo.originalName || photo.filename || `bilde${fallbackExtension}`);
+function uniqueArchiveName(item, usedNames) {
+  const fallbackExtension = extensionForMimeType(item.mimeType);
+  const fallbackName = item.mediaType === "video" ? "video" : "bilde";
+  const source = String(
+    item.originalName || item.filename || `${fallbackName}${fallbackExtension}`
+  );
   const cleaned = source
     .normalize("NFC")
     .split(/[\\/]/)
@@ -341,7 +588,7 @@ function uniqueArchiveName(photo, usedNames) {
     .replace(/[\u0000-\u001f<>:"|?*]/g, "_")
     .replace(/^\.+/, "")
     .trim()
-    .slice(0, 180) || `bilde${fallbackExtension}`;
+    .slice(0, 180) || `${fallbackName}${fallbackExtension}`;
 
   const extension = path.extname(cleaned);
   const stem = path.basename(cleaned, extension);
@@ -357,6 +604,11 @@ function extensionForMimeType(mimeType) {
   if (mimeType === "image/webp") return ".webp";
   if (mimeType === "image/heic") return ".heic";
   if (mimeType === "image/heif") return ".heif";
+  if (mimeType === "video/quicktime") return ".mov";
+  if (mimeType === "video/webm") return ".webm";
+  if (mimeType === "video/x-m4v") return ".m4v";
+  if (mimeType === "video/mpeg") return ".mpeg";
+  if (mimeType === "video/mp4") return ".mp4";
   return ".jpg";
 }
 
@@ -427,11 +679,25 @@ async function readAll(file, buffer, position) {
 }
 
 function parseArguments(values) {
-  const parsed = { configureUploadSecret: false, upload: false, uploadExisting: false };
+  const parsed = {
+    allTypes: false,
+    configureUploadSecret: false,
+    manifestOnly: false,
+    skipArchiveUpload: false,
+    upload: false,
+    uploadExisting: false,
+    verifyExisting: false,
+  };
   for (let index = 0; index < values.length; index++) {
     const value = values[index];
     if (value === "--upload") {
       parsed.upload = true;
+    } else if (value === "--upload-manifest-only") {
+      parsed.upload = true;
+      parsed.manifestOnly = true;
+    } else if (value === "--build-and-upload-manifest") {
+      parsed.upload = true;
+      parsed.skipArchiveUpload = true;
     } else if (value === "--upload-existing") {
       parsed.upload = true;
       parsed.uploadExisting = true;
@@ -439,8 +705,22 @@ function parseArguments(values) {
       if (!parsed.output) {
         throw new Error("--upload-existing krever en filsti.");
       }
+    } else if (value === "--verify-existing") {
+      parsed.verifyExisting = true;
+      parsed.output = values[++index];
+      if (!parsed.output) {
+        throw new Error("--verify-existing krever en filsti.");
+      }
     } else if (value === "--configure-upload-secret") {
       parsed.configureUploadSecret = true;
+    } else if (value === "--all-types") {
+      parsed.allTypes = true;
+    } else if (value === "--type") {
+      const type = values[++index];
+      if (type !== "photos" && type !== "videos") {
+        throw new Error("--type må være photos eller videos.");
+      }
+      parsed.type = type;
     } else if (value === "--api-url") {
       parsed.apiUrl = values[++index];
     } else if (value === "--output") {
@@ -454,6 +734,9 @@ function parseArguments(values) {
     } else {
       throw new Error(`Ukjent argument: ${value}`);
     }
+  }
+  if (parsed.allTypes && parsed.type) {
+    throw new Error("Bruk enten --all-types eller --type, ikke begge.");
   }
   return parsed;
 }

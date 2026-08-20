@@ -2,16 +2,53 @@
 
 import { startTransition, useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Download, RefreshCw } from "lucide-react";
+import {
+  CheckSquare2,
+  Download,
+  Images,
+  RefreshCw,
+  Video,
+  X,
+} from "lucide-react";
 import { PhotoCard } from "./photo-card";
 import { PhotoLightbox } from "./photo-lightbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { fetchMediaList, getPhotoArchiveUrl } from "@/lib/media/client";
+import {
+  fetchMediaList,
+  getMediaArchiveUrl,
+  getSelectedMediaArchiveUrl,
+  type MediaArchiveKind,
+} from "@/lib/media/client";
 import type { PhotoMetadata } from "@/lib/storage/types";
 
 const INITIAL_GALLERY_PAGE_SIZE = 36;
 const BACKGROUND_GALLERY_PAGE_SIZE = 100;
+const MAX_SELECTED_MEDIA = 100;
+const ARCHIVE_OPTIONS: Array<{
+  kind: MediaArchiveKind;
+  label: string;
+  icon: typeof Images;
+  url: string | undefined;
+}> = [
+  {
+    kind: "photos",
+    label: "bilder",
+    icon: Images,
+    url: getMediaArchiveUrl("photos"),
+  },
+  {
+    kind: "videos",
+    label: "videoer",
+    icon: Video,
+    url: getMediaArchiveUrl("videos"),
+  },
+];
+
+interface ArchiveStatus {
+  available: boolean;
+  size?: number;
+}
 
 interface PhotoGridProps {
   refreshTrigger?: number;
@@ -23,14 +60,21 @@ interface LoadPhotosOptions {
 }
 
 export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
-  const archiveUrl = getPhotoArchiveUrl();
-  const [archiveAvailable, setArchiveAvailable] = useState(false);
+  const [archiveStatuses, setArchiveStatuses] = useState<
+    Record<MediaArchiveKind, ArchiveStatus>
+  >({
+    photos: { available: false },
+    videos: { available: false },
+  });
   const [photos, setPhotos] = useState<PhotoMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [cursor, setCursor] = useState<string | undefined>();
   const [hasMore, setHasMore] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<PhotoMetadata | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
@@ -102,18 +146,41 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   }, []);
 
   useEffect(() => {
-    if (!archiveUrl) {
-      setArchiveAvailable(false);
-      return;
-    }
-
     const controller = new AbortController();
-    fetch(archiveUrl, { method: "HEAD", signal: controller.signal })
-      .then((response) => setArchiveAvailable(response.ok))
-      .catch(() => setArchiveAvailable(false));
+    Promise.all(
+      ARCHIVE_OPTIONS.map(async ({ kind, url }) => {
+        if (!url) {
+          return [kind, { available: false }] as const;
+        }
+
+        try {
+          const response = await fetch(url, {
+            method: "HEAD",
+            signal: controller.signal,
+          });
+          const size = Number(response.headers.get("Content-Length"));
+          return [
+            kind,
+            {
+              available: response.ok,
+              size: response.ok && Number.isFinite(size) && size > 0 ? size : undefined,
+            },
+          ] as const;
+        } catch {
+          return [kind, { available: false }] as const;
+        }
+      })
+    ).then((entries) => {
+      if (!controller.signal.aborted) {
+        setArchiveStatuses(Object.fromEntries(entries) as Record<
+          MediaArchiveKind,
+          ArchiveStatus
+        >);
+      }
+    });
 
     return () => controller.abort();
-  }, [archiveUrl]);
+  }, []);
 
   useEffect(() => {
     setCursor(undefined);
@@ -121,6 +188,14 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
     setLoadMoreError(null);
     loadPhotos();
   }, [refreshTrigger, loadPhotos]);
+
+  useEffect(() => {
+    const availableIds = new Set(photos.map((photo) => photo.id));
+    setSelectedIds((current) => {
+      const next = new Set([...current].filter((id) => availableIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [photos]);
 
   useEffect(() => {
     if (loading || loadingMore || !hasMore || !cursor || loadMoreError) {
@@ -179,22 +254,80 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
     );
   }
 
+  const selectedArchiveUrl = getSelectedMediaArchiveUrl([...selectedIds]);
+
+  function toggleSelection(id: string) {
+    setSelectionError(null);
+    if (!selectedIds.has(id) && selectedIds.size >= MAX_SELECTED_MEDIA) {
+      setSelectionError(`Du kan laste ned opptil ${MAX_SELECTED_MEDIA} filer om gangen.`);
+      return;
+    }
+
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function stopSelecting() {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    setSelectionError(null);
+  }
+
   return (
     <>
-      {archiveUrl && archiveAvailable && (
-        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-[#E8DED0] bg-white/70 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      {getMediaArchiveUrl("photos") && (
+        <div className="mb-5 flex flex-col gap-4 rounded-xl border border-[#E8DED0] bg-white/70 px-4 py-4 sm:px-5">
           <div>
-            <p className="font-medium text-[#5D4E37]">Vil du beholde alle bildene?</p>
+            <p className="font-medium text-[#5D4E37]">Last ned originalfilene</p>
             <p className="mt-0.5 text-sm text-[#8B7355]">
-              Last ned originalene samlet i én stor ZIP-fil. Bruk gjerne Wi-Fi.
+              {selectionMode
+                ? `Trykk på filene du vil ha. Du kan velge opptil ${MAX_SELECTED_MEDIA} originalfiler om gangen.`
+                : "Last ned alt samlet, eller velg akkurat de bildene og videoene du vil ha."}
             </p>
           </div>
-          <Button asChild variant="outline" className="shrink-0">
-            <a href={archiveUrl} target="_blank" rel="noreferrer">
-              <Download className="h-4 w-4" />
-              Last ned alle bilder
-            </a>
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {!selectionMode && ARCHIVE_OPTIONS.map(({ kind, label, icon: ArchiveIcon, url }) => {
+              const archive = archiveStatuses[kind];
+              if (!url || !archive.available) {
+                return null;
+              }
+
+              return (
+                <Button key={kind} asChild variant="outline" className="shrink-0">
+                  <a href={url} target="_blank" rel="noreferrer">
+                    <ArchiveIcon className="h-4 w-4" />
+                    Last ned {label}
+                    {archive.size ? ` (${formatArchiveSize(archive.size)})` : ""}
+                    <Download className="h-4 w-4" />
+                  </a>
+                </Button>
+              );
+            })}
+            <Button
+              type="button"
+              variant={selectionMode ? "secondary" : "outline"}
+              onClick={() => selectionMode ? stopSelecting() : setSelectionMode(true)}
+            >
+              {selectionMode ? (
+                <X className="h-4 w-4" />
+              ) : (
+                <CheckSquare2 className="h-4 w-4" />
+              )}
+              {selectionMode ? "Avslutt valg" : "Velg filer"}
+            </Button>
+          </div>
+          {selectionError && (
+            <p className="text-sm font-medium text-red-700" role="alert">
+              {selectionError}
+            </p>
+          )}
         </div>
       )}
 
@@ -204,7 +337,14 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
           <PhotoCard
             key={photo.id}
             photo={photo}
-            onClick={() => setSelectedPhoto(photo)}
+            selectionMode={selectionMode}
+            selectionDisabled={!photo.downloadUrl}
+            selected={selectedIds.has(photo.id)}
+            onClick={() =>
+              selectionMode
+                ? photo.downloadUrl && toggleSelection(photo.id)
+                : setSelectedPhoto(photo)
+            }
           />
         ))}
       </div>
@@ -245,6 +385,49 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
           onNavigate={setSelectedPhoto}
         />
       )}
+
+      {selectionMode && (
+        <div className="fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-lg items-center gap-3 rounded-2xl border border-[#D9CCBB] bg-white/95 p-3 shadow-xl backdrop-blur sm:bottom-5 sm:p-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium text-[#5D4E37]">
+              {selectedIds.size === 0
+                ? "Ingen filer valgt"
+                : `${selectedIds.size} ${selectedIds.size === 1 ? "fil" : "filer"} valgt`}
+            </p>
+            <p className="truncate text-xs text-[#8B7355]">
+              Bilder og videoer lastes ned i én ZIP-fil
+            </p>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={stopSelecting}>
+            Avbryt
+          </Button>
+          <Button asChild={Boolean(selectedArchiveUrl)} disabled={!selectedArchiveUrl} size="sm">
+            {selectedArchiveUrl ? (
+              <a href={selectedArchiveUrl} target="_blank" rel="noreferrer">
+                <Download className="h-4 w-4" />
+                Last ned
+              </a>
+            ) : (
+              <span>
+                <Download className="h-4 w-4" />
+                Last ned
+              </span>
+            )}
+          </Button>
+        </div>
+      )}
     </>
   );
+}
+
+function formatArchiveSize(bytes: number): string {
+  const gigabytes = bytes / (1024 ** 3);
+  if (gigabytes >= 1) {
+    return `${new Intl.NumberFormat("nb-NO", {
+      maximumFractionDigits: 1,
+      minimumFractionDigits: 1,
+    }).format(gigabytes)} GB`;
+  }
+
+  return `${Math.round(bytes / (1024 ** 2))} MB`;
 }

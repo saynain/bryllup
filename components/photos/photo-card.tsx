@@ -4,20 +4,34 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, Film } from "lucide-react";
+import { AlertCircle, Check, Film } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { PhotoMetadata } from "@/lib/storage/types";
 
 interface PhotoCardProps {
   photo: PhotoMetadata;
   onClick: () => void;
+  selected?: boolean;
+  selectionDisabled?: boolean;
+  selectionMode?: boolean;
 }
 
-export function PhotoCard({ photo, onClick }: PhotoCardProps) {
+export function PhotoCard({
+  photo,
+  onClick,
+  selected = false,
+  selectionDisabled = false,
+  selectionMode = false,
+}: PhotoCardProps) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [hasError, setHasError] = useState(false);
   const isVideo = photo.mediaType === "video";
-  const label = isVideo ? "Åpne video" : "Åpne bilde";
+  const mediaLabel = isVideo ? "video" : "bilde";
+  const label = selectionMode && selectionDisabled
+    ? `${mediaLabel} er ikke klart for nedlasting`
+    : selectionMode
+    ? `${selected ? "Fjern" : "Velg"} ${mediaLabel}`
+    : `Åpne ${mediaLabel}`;
 
   return (
     <motion.button
@@ -25,9 +39,14 @@ export function PhotoCard({ photo, onClick }: PhotoCardProps) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.18 }}
-      className="group relative aspect-square cursor-pointer overflow-hidden bg-[#E8DED0] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8B7355]"
+      className={`group relative aspect-square cursor-pointer overflow-hidden bg-[#E8DED0] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8B7355] ${
+        selected ? "ring-4 ring-inset ring-[#5D4E37]" : ""
+      } ${selectionMode && selectionDisabled ? "cursor-not-allowed opacity-60" : ""
+      }`}
       onClick={onClick}
       aria-label={label}
+      aria-pressed={selectionMode ? selected : undefined}
+      aria-disabled={selectionMode && selectionDisabled ? true : undefined}
     >
       {!isLoaded && !hasError && (
         <Skeleton className="absolute inset-0 rounded-none" />
@@ -63,6 +82,18 @@ export function PhotoCard({ photo, onClick }: PhotoCardProps) {
       {photo.status === "processing" && (
         <div className="absolute inset-x-0 bottom-0 bg-black/60 px-1.5 py-0.5 text-[10px] leading-tight text-white">
           Behandles
+        </div>
+      )}
+      {selectionMode && !selectionDisabled && (
+        <div
+          className={`absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full border-2 shadow-sm transition-colors ${
+            selected
+              ? "border-white bg-[#5D4E37] text-white"
+              : "border-white bg-black/35 text-transparent"
+          }`}
+          aria-hidden="true"
+        >
+          <Check className="h-4 w-4" strokeWidth={3} />
         </div>
       )}
       <div className="absolute inset-0 bg-black/0 transition-colors duration-200 group-hover:bg-black/10" />
