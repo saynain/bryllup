@@ -28,6 +28,7 @@ enabled = true
 [vars]
 # Comma-separated origins allowed to call this Worker from the browser.
 CORS_ORIGINS = "http://localhost:3000,https://test.bryllup.rylands.no,https://bryllup.rylands.no"
+CLOUDFLARE_ACCOUNT_ID = "81b362ce37970cd10f656efd41e28052"
 
 # Cloudflare Images delivery base, for example:
 # https://imagedelivery.net/<account_hash>
@@ -43,4 +44,4 @@ MAX_VIDEO_BYTES = "5368709120"
 R2_MULTIPART_PART_BYTES = "5242880"
 STREAM_BASIC_MAX_BYTES = "190000000"
 STREAM_MAX_DURATION_SECONDS = "3600"
-STREAM_UPLOAD_PROTOCOL = "r2-multipart"
+STREAM_UPLOAD_PROTOCOL = "tus"

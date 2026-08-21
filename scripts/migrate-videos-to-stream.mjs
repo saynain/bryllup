@@ -15,6 +15,15 @@ let candidates = inventory.videos.filter(
   (video) =>
     video.provider !== "cloudflare-stream" || video.migrationStatus !== "complete"
 );
+if (options.ids.length > 0) {
+  const requestedIds = new Set(options.ids);
+  const knownIds = new Set(inventory.videos.map((video) => video.id));
+  const missingIds = options.ids.filter((id) => !knownIds.has(id));
+  if (missingIds.length > 0) {
+    throw new Error(`Fant ikke video-ID: ${missingIds.join(", ")}`);
+  }
+  candidates = candidates.filter((video) => requestedIds.has(video.id));
+}
 if (options.limit) {
   candidates = candidates.slice(0, options.limit);
 }
@@ -213,10 +222,14 @@ function delay(milliseconds) {
 }
 
 function parseArguments(values) {
-  const parsed = { limit: undefined, pollSeconds: 15, timeoutMinutes: 45 };
+  const parsed = { ids: [], limit: undefined, pollSeconds: 15, timeoutMinutes: 45 };
   for (let index = 0; index < values.length; index++) {
     const value = values[index];
-    if (value === "--limit") {
+    if (value === "--id") {
+      const id = values[++index]?.trim();
+      if (!id) throw new Error("--id krever en video-ID.");
+      parsed.ids.push(id);
+    } else if (value === "--limit") {
       parsed.limit = positiveNumber(values[++index], "--limit");
     } else if (value === "--poll-seconds") {
       parsed.pollSeconds = positiveNumber(values[++index], "--poll-seconds");
