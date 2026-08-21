@@ -958,7 +958,18 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
     });
   }
 
-  if (canUseStreamRest(env) && env.STREAM_UPLOAD_PROTOCOL !== "r2-multipart") {
+  const streamUploadProtocol = env.STREAM_UPLOAD_PROTOCOL || "auto";
+  const requiresStreamRest =
+    streamUploadProtocol === "tus" || streamUploadProtocol === "form";
+
+  if (requiresStreamRest && !canUseStreamRest(env)) {
+    throw new HttpError(
+      "Cloudflare Stream upload is configured but REST credentials are missing",
+      503
+    );
+  }
+
+  if (canUseStreamRest(env) && streamUploadProtocol !== "r2-multipart") {
     try {
       return await createStreamRestUpload(request, env, {
         filename,
@@ -970,6 +981,9 @@ async function createUpload(request: Request, env: Env): Promise<Response> {
         takenAt,
       });
     } catch (error) {
+      if (requiresStreamRest) {
+        throw error;
+      }
       console.warn("Falling back to R2 multipart video upload", error);
     }
   }
@@ -1246,6 +1260,7 @@ async function createStreamRestUpload(
     size: input.size,
     uploadedBy: input.uploadedBy,
     uploadMessage: input.uploadMessage,
+    takenAt: input.takenAt,
     providerId: streamId,
     url: streamIframeUrl(streamId),
     thumbnailUrl: streamThumbnailUrl(streamId),
@@ -1275,9 +1290,7 @@ async function createStreamTusUpload(
   const uploadMetadata = serializeTusMetadata({
     name: input.originalName,
     maxDurationSeconds: String(maxDurationSeconds),
-    uploadedBy: input.uploadedBy || "",
-    uploadMessage: input.uploadMessage || "",
-    source: "bryllup-media-worker",
+    expiry: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
   });
 
   const response = await fetch(
@@ -1311,6 +1324,7 @@ async function createStreamTusUpload(
     size: input.size,
     uploadedBy: input.uploadedBy,
     uploadMessage: input.uploadMessage,
+    takenAt: input.takenAt,
     providerId: streamId,
     url: streamIframeUrl(streamId),
     thumbnailUrl: streamThumbnailUrl(streamId),
@@ -1365,6 +1379,7 @@ async function createStreamBindingUpload(
     size: input.size,
     uploadedBy: input.uploadedBy,
     uploadMessage: input.uploadMessage,
+    takenAt: input.takenAt,
     providerId: streamId,
     url: streamIframeUrl(streamId),
     thumbnailUrl: streamThumbnailUrl(streamId),

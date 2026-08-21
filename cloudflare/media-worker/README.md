@@ -8,18 +8,23 @@ site continues to run on Vercel.
 - D1 stores media metadata and gallery pagination state.
 - R2 stores photo originals. The Images binding creates cached 480 px WebP
   thumbnails and 1600 px WebP previews when they are first requested.
-- R2 is also the fallback backend for large videos.
+- R2 retains original video files used by downloads and migrations.
 - Video uploads use Cloudflare Stream when REST credentials or the Stream
-  binding can create a direct upload. R2 multipart is the fallback for larger
-  files and Stream failures. Large speeches are uploaded in 5 MiB retryable
-  parts instead of one long fragile request when R2 is used.
+  binding can create a direct upload. Production requires resumable TUS uploads
+  to Stream and fails the upload if Stream is unavailable, instead of silently
+  publishing an untranscoded R2 video. R2 multipart remains available as an
+  explicit recovery mode.
 - R2-backed videos can store a client-generated JPEG thumbnail next to the
   original video object.
 - Optional REST credentials also enable Cloudflare Images Direct Creator Upload.
 
-The checked-in Worker config currently forces `STREAM_UPLOAD_PROTOCOL` to
-`r2-multipart` because the Cloudflare account has zero allocated Stream minutes.
-Switch it back to `auto` after Stream capacity is enabled.
+The production Worker config forces `STREAM_UPLOAD_PROTOCOL` to `tus`. This is
+required for videos over 200 MB and gives mobile uploads resumable chunks. Set a
+Stream Write API token before deployment:
+
+```bash
+npx wrangler secret put CLOUDFLARE_API_TOKEN --config cloudflare/media-worker/wrangler.toml
+```
 
 ## Provisioning
 
