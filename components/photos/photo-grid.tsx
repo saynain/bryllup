@@ -1,6 +1,12 @@
 "use client";
 
-import { startTransition, useState, useEffect, useCallback } from "react";
+import {
+  startTransition,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from "react";
 import { motion } from "framer-motion";
 import {
   CheckSquare2,
@@ -23,7 +29,7 @@ import {
 import type { PhotoMetadata } from "@/lib/storage/types";
 
 const INITIAL_GALLERY_PAGE_SIZE = 36;
-const BACKGROUND_GALLERY_PAGE_SIZE = 100;
+const BACKGROUND_GALLERY_PAGE_SIZE = 60;
 const MAX_SELECTED_MEDIA = 100;
 const ARCHIVE_OPTIONS: Array<{
   kind: MediaArchiveKind;
@@ -76,6 +82,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
 
   const loadPhotos = useCallback(async ({
     loadMore = false,
@@ -199,11 +206,23 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
       return;
     }
 
-    const timer = window.setTimeout(() => {
-      loadPhotos({ loadMore: true, cursorOverride: cursor });
-    }, 100);
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) {
+      return;
+    }
 
-    return () => window.clearTimeout(timer);
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          loadPhotos({ loadMore: true, cursorOverride: cursor });
+        }
+      },
+      { rootMargin: "600px 0px" }
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
   }, [cursor, hasMore, loadMoreError, loading, loadingMore, loadPhotos]);
 
   if (loading) {
@@ -329,10 +348,11 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
 
       {/* Photo grid */}
       <div className="grid grid-cols-4 gap-0.5 overflow-hidden rounded-md sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
-        {photos.map((photo) => (
+        {photos.map((photo, index) => (
           <PhotoCard
             key={photo.id}
             photo={photo}
+            animateEntrance={index < INITIAL_GALLERY_PAGE_SIZE}
             selectionMode={selectionMode}
             selectionDisabled={!photo.downloadUrl}
             selected={selectedIds.has(photo.id)}
@@ -347,6 +367,7 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
 
       {(hasMore || loadingMore || loadMoreError) && (
         <div
+          ref={loadMoreSentinelRef}
           className="mt-6 flex min-h-12 items-center justify-center gap-3 text-sm text-[#8B7355]"
           aria-live="polite"
         >
@@ -363,11 +384,15 @@ export function PhotoGrid({ refreshTrigger = 0 }: PhotoGridProps) {
                 Prøv igjen
               </Button>
             </>
-          ) : (
+          ) : loadingMore ? (
             <>
               <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
-              <span>Laster inn resten av galleriet …</span>
+              <span>Laster inn flere bilder …</span>
             </>
+          ) : (
+            <span className="sr-only">
+              Flere bilder lastes automatisk når du blar nedover.
+            </span>
           )}
         </div>
       )}
