@@ -11,6 +11,7 @@ import type { PhotoMetadata } from "@/lib/storage/types";
 interface PhotoCardProps {
   photo: PhotoMetadata;
   onClick: () => void;
+  animateEntrance?: boolean;
   selected?: boolean;
   selectionDisabled?: boolean;
   selectionMode?: boolean;
@@ -19,6 +20,7 @@ interface PhotoCardProps {
 export function PhotoCard({
   photo,
   onClick,
+  animateEntrance = true,
   selected = false,
   selectionDisabled = false,
   selectionMode = false,
@@ -36,9 +38,10 @@ export function PhotoCard({
   return (
     <motion.button
       type="button"
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
+      initial={animateEntrance ? { opacity: 0, scale: 0.95 } : false}
+      animate={animateEntrance ? { opacity: 1, scale: 1 } : undefined}
       transition={{ duration: 0.18 }}
+      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 100px" }}
       className={`group relative aspect-square cursor-pointer overflow-hidden bg-[#E8DED0] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8B7355] ${
         selected ? "ring-4 ring-inset ring-[#5D4E37]" : ""
       } ${selectionMode && selectionDisabled ? "cursor-not-allowed opacity-60" : ""
